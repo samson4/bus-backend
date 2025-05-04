@@ -1,5 +1,4 @@
 from pydantic import BaseModel
-from datetime import datetime
 from typing import Union
 from fastapi.security import OAuth2PasswordBearer
 

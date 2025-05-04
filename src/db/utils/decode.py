@@ -1,10 +1,5 @@
-from jwt import InvalidTokenError
-import jwt
-
 # from main import get_user
-from src.db.users.userschemas import TokenData, User
-from src.db.users.userschemas import oauth2_scheme
-from fastapi import Depends, HTTPException, status
+from src.db.users.userschemas import User
 
 
 SECRET_KEY = "90ded69acb971f4f6f9a6913428503503eac012275cd9f2b13c37a0ba43f35c6"

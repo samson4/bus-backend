@@ -1,4 +1,3 @@
-import uuid
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta, timezone
@@ -7,7 +6,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-from sqlalchemy import create_engine, select, text, Table, MetaData
+from sqlalchemy import create_engine, select, Table, MetaData
 from sqlalchemy.orm import Session
 
 import jwt
@@ -25,14 +24,16 @@ from src import (
 from src.db.users.userschemas import User
 
 # from src.db.utils.decode import get_current_user
-from src.db import Schemas, Tables, Columns
+from src.db import Schemas
 from src.db import DATABASE_URL
 from src.db.users.userschemas import oauth2_scheme, Token, TokenData
+from decouple import config as decouple_config
 
-
-SECRET_KEY = "90ded69acb971f4f6f9a6913428503503eac012275cd9f2b13c37a0ba43f35c6"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+SECRET_KEY = decouple_config(
+    "SECRET_KEY", "90ded69acb971f4f6f9a6913428503503eac012275cd9f2b13c37a0ba43f35c6"
+)
+ALGORITHM = decouple_config("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = decouple_config("ACCESS_TOKEN_EXPIRE_MINUTES", 30)
 
 
 app = FastAPI()
