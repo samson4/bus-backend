@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+gunicorn
+sqlmodel
+pydantic
+SQLAlchemy
+python-decouple
+psycopg2-binary
+ruff

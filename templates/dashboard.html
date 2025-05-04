@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="container mx-auto">
+    <h1 class="text-2xl font-bold mb-6">Dashboard</h1>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Dashboard Cards -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center">
+                <i class="lucide-users text-3xl text-blue-500 mr-4"></i>
+                <div>
+                    <h3 class="text-gray-500">Total Users</h3>
+                    <p class="text-2xl font-bold">1,234</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center">
+                <i class="lucide-shopping-cart text-3xl text-green-500 mr-4"></i>
+                <div>
+                    <h3 class="text-gray-500">Orders</h3>
+                    <p class="text-2xl font-bold">567</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center">
+                <i class="lucide-dollar-sign text-3xl text-yellow-500 mr-4"></i>
+                <div>
+                    <h3 class="text-gray-500">Revenue</h3>
+                    <p class="text-2xl font-bold">$12,345</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center">
+                <i class="lucide-box text-3xl text-purple-500 mr-4"></i>
+                <div>
+                    <h3 class="text-gray-500">Products</h3>
+                    <p class="text-2xl font-bold">890</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
