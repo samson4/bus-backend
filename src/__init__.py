@@ -5,4 +5,5 @@ from .models import (
     ColumnMetadata,
     TableMetadata,
     SchemaMetadata,
+    UserModel,
 )

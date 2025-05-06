@@ -1,4 +1,4 @@
-from sqlalchemy import MetaData, Column, Table, String, Integer
+from sqlalchemy import MetaData, Column, Table, String, Integer, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 
 from .db.mixins import UniqueIDMixin, TimeStampMixin
@@ -97,7 +97,7 @@ class SchemaInfo(Base):
 class SchemaMetadata(UniqueIDMixin, TimeStampMixin, Base):
     __tablename__ = "bus_metadata"
 
-    schema_name = Column(String)
+    schema_name = Column(String(255))
 
 
 class TableMetadata(Base, UniqueIDMixin, TimeStampMixin):
@@ -110,3 +110,11 @@ class ColumnMetadata(Base, UniqueIDMixin, TimeStampMixin):
     __tablename__ = "column_metadata"
     column_name = Column(String)
     table_name = Column(String)
+
+
+class UserModel(Base, UniqueIDMixin, TimeStampMixin):
+    __tablename__ = "bus_users"
+    user_name = Column(String)
+    email = Column(String, unique=True)
+    password = Column(String)
+    disabled = Column(Boolean, default=False)

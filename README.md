@@ -1,4 +1,4 @@
-# Project Name
+# BUS Backend
 
 Postgres Database introspection and query tool.
 

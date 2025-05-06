@@ -20,6 +20,7 @@ from src import (
     TableMetadata,
     ColumnMetadata,
     SchemaMetadata,
+    UserModel,
 )
 from src.db.users.userschemas import User
 
@@ -53,11 +54,13 @@ app.add_middleware(
 
 print("DATABASE_URL", DATABASE_URL)
 engine = create_engine(DATABASE_URL)
-
+dialect = engine.dialect
+print(f"Connected database dialect: {dialect.name}")
 # if not engine.dialect.has_table(engine, 'bus_metadata'):
 TableMetadata.metadata.create_all(bind=engine)
 ColumnMetadata.metadata.create_all(bind=engine)
 SchemaMetadata.metadata.create_all(bind=engine)
+UserModel.metadata.create_all(bind=engine)
 
 
 def get_db():
@@ -128,8 +131,11 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     return encoded_jwt
 
 
-def get_user(db, username: str):
-    if username in db:
+def get_user(username: str, db: Session = Depends(get_db)):
+    query = select(UserModel.user_name).where(UserModel.user_name == username).limit(1)
+    result = db.execute(query)
+    print("result", result)
+    if username in result:
         user_dict = db[username]
         return UserInDB(**user_dict)
 
@@ -202,6 +208,13 @@ async def login_for_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
     return Token(access_token=access_token, token_type="bearer")
+
+
+@app.post("/register")
+async def register(form_data: User):
+
+    # user_data = User(form_data)
+    print("form_data", form_data)
 
 
 with Session(engine) as session:
