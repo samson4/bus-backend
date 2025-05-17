@@ -10,7 +10,7 @@ class UniqueIDMixin:
     Mixin to add a unique ID to a SQLAlchemy model.
     """
 
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
 
 
 @declarative_mixin

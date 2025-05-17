@@ -1,5 +1,7 @@
-from sqlalchemy import MetaData, Column, Table, String, Integer, Boolean
+from typing import List
+from sqlalchemy import MetaData, Column, Table, String, Integer, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import Mapped, relationship
 
 from .db.mixins import UniqueIDMixin, TimeStampMixin
 
@@ -26,6 +28,8 @@ class TableInfo(Base):
         Column("commit_action", String),
         extend_existing=True,
     )
+    # schema: Mapped["SchemaInfo"] = (relationship(back_populates="schema_name"),)
+    # columns: Mapped[List["ColumnInfo"]] = relationship(back_populates="column_name")
 
 
 class ColumnInfo(Base):
@@ -78,6 +82,7 @@ class ColumnInfo(Base):
         Column("is_updatable", String),
         extend_existing=True,
     )
+    # table: Mapped["TableInfo"] = relationship(back_populates="table_name")
 
 
 class SchemaInfo(Base):
@@ -92,29 +97,34 @@ class SchemaInfo(Base):
         Column("default_character_set_name", String),
         extend_existing=True,
     )
+    # tables: Mapped[List["TableInfo"]] = relationship(back_populates="table_schema")
 
 
 class SchemaMetadata(UniqueIDMixin, TimeStampMixin, Base):
     __tablename__ = "bus_metadata"
 
-    schema_name = Column(String(255))
+    schema_name = Column(String(255),unique=True)
+    tables: Mapped[List["TableMetadata"]] = relationship(
+        back_populates="schema", cascade="all, delete-orphan"
+    )
 
 
 class TableMetadata(Base, UniqueIDMixin, TimeStampMixin):
     __tablename__ = "table_metadata"
-    table_name = Column(String)
-    schema_name = Column(String)
+    table_name = Column(String(255),unique=True)
+    schema_name = Column(String(255), ForeignKey("bus_metadata.schema_name"))
+    schema: Mapped["SchemaMetadata"] = relationship(back_populates="tables")
 
 
 class ColumnMetadata(Base, UniqueIDMixin, TimeStampMixin):
     __tablename__ = "column_metadata"
-    column_name = Column(String)
-    table_name = Column(String)
+    column_name = Column(String(255))
+    table_name = Column(String(255), ForeignKey("table_metadata.table_name"))
 
 
 class UserModel(Base, UniqueIDMixin, TimeStampMixin):
     __tablename__ = "bus_users"
-    user_name = Column(String)
-    email = Column(String, unique=True)
-    password = Column(String)
+    user_name = Column(String(255))
+    email = Column(String(255), unique=True)
+    password = Column(String(255))
     disabled = Column(Boolean, default=False)

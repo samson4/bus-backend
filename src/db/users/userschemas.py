@@ -1,16 +1,48 @@
-from pydantic import BaseModel
-from typing import Union
+from pydantic import BaseModel, ConfigDict, EmailStr
+
+from typing import Union, Any, Generic, Optional, TypeVar
 from fastapi.security import OAuth2PasswordBearer
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
+class UserBase(BaseModel):
+    """Base User model."""
+
+    email: EmailStr
+    is_active: Optional[bool] = True
+    is_superuser: Optional[bool] = False
+    is_verified: Optional[bool] = False
+
+    class Config:
+        orm_mode = True
+
+
 class User(BaseModel):
-    username: str
-    email: Union[str, None] = None
-    full_name: Union[str, None] = None
-    disabled: Union[bool, None] = None
+    id: str
+    email: EmailStr
+    is_active: bool = True
+    is_superuser: bool = False
+    is_verified: bool = False
+
+    class Config:
+        orm_mode = True
+
+
+class UserCreate(UserBase):
+    password: str
+
+
+class UserCreateResponse(BaseModel):
+    id: str
+    email: EmailStr
+    is_active: bool = True
+    is_superuser: bool = False
+    is_verified: bool = False
+
+    class Config:
+        orm_mode = True
 
 
 class Token(BaseModel):

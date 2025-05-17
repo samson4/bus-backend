@@ -6,4 +6,4 @@ database = decouple_config("DATABASE", "postgres")
 user = decouple_config("DB_USER", "postgres")
 password = decouple_config("DB_PASSWORD", "postgres")
 port = decouple_config("DB_PORT", "5432")
-DATABASE_URL = f"postgresql+psycopg2://{user}:{password}@{host}/{database}"
+DATABASE_URL = decouple_config("DATABASE_URL",f"postgresql+psycopg2://{user}:{password}@{host}/{database}")
