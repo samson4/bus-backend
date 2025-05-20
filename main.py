@@ -3,9 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+
 from sqlalchemy import create_engine, select, Table, MetaData
 from sqlalchemy.orm import Session, aliased
 
@@ -39,10 +37,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = decouple_config("ACCESS_TOKEN_EXPIRE_MINUTES", 30)
 
 app = FastAPI()
 origins = ["*"]
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Initialize templates
-templates = Jinja2Templates(directory="templates")
 
 app.add_middleware(
     CORSMiddleware,
@@ -95,35 +89,6 @@ def get_db():
         db.close()
 
 
-print("quiero", select(SchemaInfo.schema_name))
-
-
-fake_users_db = {
-    "johndoe": {
-        "username": "johndoe",
-        "full_name": "John Doe",
-        "email": "johndoe@example.com",
-        "hashed_password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
-        "disabled": False,
-    },
-    "alice": {
-        "username": "alice",
-        "full_name": "Alice Wonderson",
-        "email": "alice@example.com",
-        "hashed_password": "fakehashedsecret2",
-        "disabled": True,
-    },
-}
-
-
-def fake_hash_password(password: str):
-    return "fakehashed" + password
-
-
-class UserInDB(User):
-    hashed_password: str
-
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -139,17 +104,20 @@ def authenticate_user(username: str, password: str, db):
     user = get_user(username, db)
     if not user:
         return False
-    if not verify_password(password, user.hashed_password):
+    if not verify_password(password, hashed_password=user.password):
         return False
     return user
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
+    issued_at = datetime.now(timezone.utc)
+    to_encode.update({"iat": issued_at})
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -171,33 +139,8 @@ def get_user(email: str, db):
 def fake_decode_token(token):
     # This doesn't provide any security at all
     # Check the next version
-    user = get_user(fake_users_db, token)
+    user = get_user(token)
     return user
-
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    user = fake_decode_token(token)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return user
-
-
-async def get_current_active_user(
-    current_user: User = Depends(get_current_user),
-):
-    if current_user.disabled:
-        raise HTTPException(status_code=400, detail="Inactive user")
-    return current_user
-
-
-def fake_decode_token(token):
-    return User(
-        username=token + "fakedecoded", email="john@example.com", full_name="John Doe"
-    )
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -208,71 +151,25 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
-        if username is None:
+        user = payload.get("bus")
+        print("bus", user)
+        if user is None:
             raise credentials_exception
-        token_data = TokenData(username=username)
+        token_data = TokenData(email=user["email"])
     except InvalidTokenError:
         raise credentials_exception
-    user = get_user(fake_users_db, email=token_data.email)
+    user = get_user(email=token_data.email)
     if user is None:
         raise credentials_exception
     return user
 
 
-@app.post("/token")
-async def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db),
-) -> Token:
-    user = authenticate_user(form_data.username, form_data.password, db)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token_expires = timedelta(minutes=int(ACCESS_TOKEN_EXPIRE_MINUTES))
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-    return Token(access_token=access_token, token_type="bearer")
-
-
-@app.post("/register", response_model=UserCreateResponse)
-async def register(
-    request: Request,
-    form_data: UserCreate,
-    db: Session = Depends(get_db),
+async def get_current_active_user(
+    current_user: User = Depends(get_current_user),
 ):
-
-    # user_data = User(form_data)
-    print("form_data", form_data)
-    user = get_user(form_data.email, db)
-    if user:
-        raise HTTPException(
-            status_code=400,
-            detail="Email already registered",
-        )
-    hashed_password = get_password_hash(form_data.password)
-    user_data = UserModel(
-        user_name=form_data.email,
-        email=form_data.email,
-        password=hashed_password,
-    )
-    db.add(user_data)
-    db.commit()
-    db.refresh(user_data)
-    user = UserCreateResponse(
-        id=user_data.id,
-        email=user_data.email,
-        is_active=True,
-        is_superuser=False,
-        is_verified=True,
-    )
-    print("user_data", user_data)
-
-    return user_data
+    if current_user.disabled:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
 
 
 def insert_schema(
@@ -344,8 +241,69 @@ def insert_columns(session, table: str = None):
     # return columns_result
 
 
-with Session(engine) as session:
+@app.post("/token")
+async def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+) -> Token:
+    user = authenticate_user(form_data.username, form_data.password, db)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=int(ACCESS_TOKEN_EXPIRE_MINUTES))
+    access_token = create_access_token(
+        data={
+            "sub": user.id,
+            "bus": {
+                "username": user.user_name,
+                "email": user.email,
+                "disabled": user.disabled,
+            },
+        },
+        expires_delta=access_token_expires,
+    )
+    return Token(access_token=access_token, token_type="bearer")
 
+
+@app.post("/register", response_model=UserCreateResponse)
+async def register(
+    request: Request,
+    form_data: UserCreate,
+    db: Session = Depends(get_db),
+):
+    # user_data = User(form_data)
+    print("form_data", form_data)
+    user = get_user(form_data.email, db)
+    if user:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered",
+        )
+    hashed_password = get_password_hash(form_data.password)
+    user_data = UserModel(
+        user_name=form_data.email,
+        email=form_data.email,
+        password=hashed_password,
+    )
+    db.add(user_data)
+    db.commit()
+    db.refresh(user_data)
+    user = UserCreateResponse(
+        id=user_data.id,
+        email=user_data.email,
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    print("user_data", user_data)
+
+    return user_data
+
+
+with Session(engine) as session:
     if dialect.name == "mysql":
         print("edb", engine.url.database)
 
@@ -371,11 +329,23 @@ with Session(engine) as session:
 # API Routes
 @app.get("/schemas/", response_model=List[Schemas])
 def get_schemas(
+    request: Request,
     schema_name: Optional[str] = None,
     limit: Optional[int] = 15,
     db: Session = Depends(get_db),
 ):
+    # headers = request.headers
+    # token = headers["authorization"].split(" ")[1]
     query = select(SchemaMetadata).limit(limit).order_by(SchemaMetadata.schema_name)
+    # print(
+    #    "dec",
+    #    jwt.decode(
+    #        token,
+    #        SECRET_KEY,
+    #        algorithms=["HS256"],
+    #    ),
+    # )
+
     print("query", query)
     result = db.execute(query)
     return result.scalars().all()
@@ -422,22 +392,6 @@ def get_data(
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/templates", response_class=HTMLResponse)
-async def dashboard(request: Request, token: str = Depends(oauth2_scheme)):
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "menu_items": [
-                {"name": "Dashboard", "icon": "home", "url": "/"},
-                {"name": "Analytics", "icon": "bar-chart", "url": "/analytics"},
-                {"name": "Users", "icon": "users", "url": "/users"},
-                {"name": "Settings", "icon": "settings", "url": "/settings"},
-            ],
-        },
-    )
 
 
 @app.get("/items/")

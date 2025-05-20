@@ -103,7 +103,7 @@ class SchemaInfo(Base):
 class SchemaMetadata(UniqueIDMixin, TimeStampMixin, Base):
     __tablename__ = "bus_metadata"
 
-    schema_name = Column(String(255),unique=True)
+    schema_name = Column(String(255), unique=True)
     tables: Mapped[List["TableMetadata"]] = relationship(
         back_populates="schema", cascade="all, delete-orphan"
     )
@@ -111,7 +111,7 @@ class SchemaMetadata(UniqueIDMixin, TimeStampMixin, Base):
 
 class TableMetadata(Base, UniqueIDMixin, TimeStampMixin):
     __tablename__ = "table_metadata"
-    table_name = Column(String(255),unique=True)
+    table_name = Column(String(255), unique=True)
     schema_name = Column(String(255), ForeignKey("bus_metadata.schema_name"))
     schema: Mapped["SchemaMetadata"] = relationship(back_populates="tables")
 

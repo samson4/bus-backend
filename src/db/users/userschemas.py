@@ -1,6 +1,6 @@
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, EmailStr
 
-from typing import Union, Any, Generic, Optional, TypeVar
+from typing import Optional
 from fastapi.security import OAuth2PasswordBearer
 
 
@@ -51,4 +51,4 @@ class Token(BaseModel):
 
 
 class TokenData(BaseModel):
-    username: str | None = None
+    email: EmailStr | None = None
