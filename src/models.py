@@ -1,5 +1,14 @@
 from typing import List
-from sqlalchemy import MetaData, Column, Table, String, Integer, Boolean, ForeignKey
+from sqlalchemy import (
+    MetaData,
+    Column,
+    Table,
+    String,
+    Integer,
+    Boolean,
+    ForeignKey,
+    UniqueConstraint,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, relationship
 
@@ -114,6 +123,9 @@ class TableMetadata(Base, UniqueIDMixin, TimeStampMixin):
     table_name = Column(String(255), unique=True)
     schema_name = Column(String(255), ForeignKey("bus_metadata.schema_name"))
     schema: Mapped["SchemaMetadata"] = relationship(back_populates="tables")
+    UniqueConstraint(
+        table_name, schema_name, name="table_name_schema_name_unique_constraint"
+    )
 
 
 class ColumnMetadata(Base, UniqueIDMixin, TimeStampMixin):

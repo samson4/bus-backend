@@ -1,11 +1,11 @@
 # BUS Backend
 
-Postgres Database introspection and query tool.
+Postgres & MySql Database introspection and query tool.
 
 ## Prerequisites/
 
 - Python 3.8 or higher
-- PostgreSQL
+- PostgreSQL or MySql
 - UV (Python package installer)
 
 ## Installation

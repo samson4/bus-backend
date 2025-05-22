@@ -178,16 +178,14 @@ def insert_schema(
     print("schemastart", datetime.utcnow())
     metadata = select(SchemaMetadata)
     metadata_exists = session.execute(metadata).all()
-    print(
-        "metadata_exists",
-        len(metadata_exists),
-    )
+    print("metadata_exists", (metadata_exists))
     if len(metadata_exists) == 0:
         schema_query = select(SchemaInfo.schema_name).where(
             SchemaInfo.schema_name.notin_(exclude_schemas)
         )
         schema_result = session.execute(schema_query).all()
         for schema in schema_result:
+            print("schema", schema)
             schema_data = SchemaMetadata(schema_name=schema[0])
             session.add(schema_data)
             session.commit()
@@ -199,23 +197,24 @@ def insert_schema(
 
 def insert_tables(session, schema: str = None):
     print("tablestart", datetime.utcnow())
-    tables_metadata = select(TableMetadata)
-    table_metadata_exists = session.execute(tables_metadata).all()
-    print("table_metadata_exists", len(table_metadata_exists))
-    if len(table_metadata_exists) == 0:
-        tables_query = select(TableInfo.table_name, TableInfo.table_schema).where(
-            TableInfo.table_schema == schema
+    # tables_metadata = select(TableMetadata)
+    # table_metadata_exists = session.execute(tables_metadata).all()
+    # print("table_metadata_exists", (table_metadata_exists))
+    # if len(table_metadata_exists) == 0:
+    tables_query = select(TableInfo.table_name, TableInfo.table_schema).where(
+        TableInfo.table_schema == schema
+    )
+    print("tables_query", tables_query)
+    tables_result = session.execute(tables_query).all()
+    for table in tables_result:
+        print("table", table)
+        table_data = TableMetadata(
+            table_name=table.table_name, schema_name=table.table_schema
         )
-        print("tables_query", tables_query)
-        tables_result = session.execute(tables_query).all()
-        for table in tables_result:
-            table_data = TableMetadata(
-                table_name=table.table_name, schema_name=table.table_schema
-            )
-            session.add(table_data)
-            session.commit()
-            session.refresh(table_data)
-            insert_columns(session, table.table_name)
+        session.add(table_data)
+        session.commit()
+        session.refresh(table_data)
+        insert_columns(session, table.table_name)
     print("tableend", datetime.utcnow())
     # return tables_result
 
@@ -231,6 +230,7 @@ def insert_columns(session, table: str = None):
         )
         columns_result = session.execute(columns_query).all()
         for column in columns_result:
+            print("column", column)
             column_data = ColumnMetadata(
                 column_name=column.column_name, table_name=column.table_name
             )
