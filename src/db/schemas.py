@@ -26,3 +26,9 @@ class Columns(BaseModel):
     updated_at: datetime
     column_name: str
     table_name: str
+
+
+# class SchemasResponse(BaseModel):
+#     schemas: list[Schemas]
+#     tables: list[Tables]
+#     columns: list[Columns]

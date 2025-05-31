@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     ForeignKey,
     UniqueConstraint,
+    Uuid,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, relationship
@@ -37,8 +38,6 @@ class TableInfo(Base):
         Column("commit_action", String),
         extend_existing=True,
     )
-    # schema: Mapped["SchemaInfo"] = (relationship(back_populates="schema_name"),)
-    # columns: Mapped[List["ColumnInfo"]] = relationship(back_populates="column_name")
 
 
 class ColumnInfo(Base):
@@ -91,7 +90,6 @@ class ColumnInfo(Base):
         Column("is_updatable", String),
         extend_existing=True,
     )
-    # table: Mapped["TableInfo"] = relationship(back_populates="table_name")
 
 
 class SchemaInfo(Base):
@@ -106,7 +104,6 @@ class SchemaInfo(Base):
         Column("default_character_set_name", String),
         extend_existing=True,
     )
-    # tables: Mapped[List["TableInfo"]] = relationship(back_populates="table_schema")
 
 
 class SchemaMetadata(UniqueIDMixin, TimeStampMixin, Base):
@@ -132,6 +129,7 @@ class ColumnMetadata(Base, UniqueIDMixin, TimeStampMixin):
     __tablename__ = "column_metadata"
     column_name = Column(String(255))
     table_name = Column(String(255), ForeignKey("table_metadata.table_name"))
+    schema_name = Column(String(255), ForeignKey("bus_metadata.schema_name"))
 
 
 class UserModel(Base, UniqueIDMixin, TimeStampMixin):
@@ -140,3 +138,46 @@ class UserModel(Base, UniqueIDMixin, TimeStampMixin):
     email = Column(String(255), unique=True)
     password = Column(String(255))
     disabled = Column(Boolean, default=False)
+
+
+class ProjectModel(Base, UniqueIDMixin, TimeStampMixin):
+    __tablename__ = "bus_projects"
+    project_name = Column(String(255), nullable=False)
+    db_connection_string = Column(String(255), nullable=False)
+    created_by = Column(
+        String(255),
+        ForeignKey("bus_users.id"),
+        nullable=False,
+    )
+    user_projects = relationship("UserProjectsModel", back_populates="project")
+
+
+class UserProjectsModel(Base, UniqueIDMixin, TimeStampMixin):
+    __tablename__ = "bus_user_projects"
+    project_id = Column(
+        String(255),
+        ForeignKey("bus_projects.id"),
+        nullable=False,
+    )
+    user_id = Column(String(255), ForeignKey("bus_users.id"), nullable=False)
+    project = relationship("ProjectModel", back_populates="user_projects")
+
+
+# UserProjects response example
+# [
+#     {
+#         "id": "ee5c83a-2a88-4b95-a3ea-f4e473768ec3\n",
+#         "project_id": "bd2ce824-8331-4955-9647-175cb543d93c",
+#         "user_id": "58beeae3-24e9-4f63-81a5-d57b7f1dde04"
+#         "created_at": "2023-10-01T12:00:00Z",
+#         "updated_at": "2023-10-01T12:00:00Z"
+#         "project": {
+#             "id": "bd2ce824-8331-4955-9647-175cb543d93c",
+#             "project_name": "Sample Project",
+#             "db_connection_string": "postgresql://user:password@localhost/dbname",
+#             "created_by": "58beeae3-24e9-4f63-81a5-d57b7f1dde04",
+#             "created_at": "2023-10-01T12:00:00Z",
+#             "updated_at": "2023-10-01T12:00:00Z"
+#         },
+#     },
+# ]

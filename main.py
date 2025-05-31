@@ -19,8 +19,15 @@ from src import (
     ColumnMetadata,
     SchemaMetadata,
     UserModel,
+    ProjectModel,
+    UserProjectsModel,
 )
 from src.db.users.userschemas import User, UserCreate, UserCreateResponse
+from src.db.projects.projectschemas import (
+    ProjectBase,
+    UserProjects,
+    UserProjectResponse,
+)
 
 # from src.db.utils.decode import get_current_user
 from src.db import Schemas
@@ -48,12 +55,14 @@ app.add_middleware(
 
 print("DATABASE_URL", DATABASE_URL)
 engine = create_engine(DATABASE_URL)
+metadata_engine = create_engine("sqlite:///./metadata.db")
 dialect = engine.dialect
-print(f"Connected database dialect: {dialect.name}")
+dialct_name = metadata_engine.dialect
+print(f"Connected database dialect: {dialect.name} {dialct_name.name}")
 
 SchemaMetadata.metadata.create_all(bind=engine)
 ColumnMetadata.metadata.create_all(bind=engine)
-UserModel.metadata.create_all(bind=engine)
+UserModel.metadata.create_all(bind=metadata_engine)
 TableMetadata.metadata.create_all(bind=engine)
 
 
@@ -82,6 +91,14 @@ exclude_tables = [
 
 
 def get_db():
+    db = Session(metadata_engine)
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_source_db():
     db = Session(engine)
     try:
         yield db
@@ -125,14 +142,11 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
 def get_user(email: str, db):
     query = select(UserModel).where(UserModel.email == email).limit(1)
-    print("result123", query)
+
     result = db.execute(query)
-    print("res", result)
+
     user = result.scalars().first()
-    print("UserModel(**result)", user)
-    # if user:
-    #     print("UserModel(**user)", UserModel(user))
-    # return User(**user)
+
     return user
 
 
@@ -152,7 +166,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user = payload.get("bus")
-        print("bus", user)
+
         if user is None:
             raise credentials_exception
         token_data = TokenData(email=user["email"])
@@ -175,69 +189,99 @@ async def get_current_active_user(
 def insert_schema(
     session,
 ):
-    print("schemastart", datetime.utcnow())
-    metadata = select(SchemaMetadata)
-    metadata_exists = session.execute(metadata).all()
-    print("metadata_exists", (metadata_exists))
-    if len(metadata_exists) == 0:
+    with Session(metadata_engine) as internalSession:
         schema_query = select(SchemaInfo.schema_name).where(
             SchemaInfo.schema_name.notin_(exclude_schemas)
         )
         schema_result = session.execute(schema_query).all()
         for schema in schema_result:
-            print("schema", schema)
+
+            # Check if schema already exists
+            existing_schema = (
+                internalSession.query(SchemaMetadata)
+                .filter(SchemaMetadata.schema_name == schema[0])
+                .first()
+            )
+            if existing_schema:
+
+                continue
+
             schema_data = SchemaMetadata(schema_name=schema[0])
-            session.add(schema_data)
-            session.commit()
-            session.refresh(schema_data)
-            insert_tables(session, schema[0])
-    print("schemaend", datetime.utcnow())
+            internalSession.add(schema_data)
+            internalSession.commit()
+            internalSession.refresh(schema_data)
+            insert_tables(session, schema[0], internalSession)
+
     # return schema_result
 
 
-def insert_tables(session, schema: str = None):
-    print("tablestart", datetime.utcnow())
-    # tables_metadata = select(TableMetadata)
-    # table_metadata_exists = session.execute(tables_metadata).all()
-    # print("table_metadata_exists", (table_metadata_exists))
-    # if len(table_metadata_exists) == 0:
+def insert_tables(session, schema, internalSession):
+
     tables_query = select(TableInfo.table_name, TableInfo.table_schema).where(
         TableInfo.table_schema == schema
     )
-    print("tables_query", tables_query)
+
     tables_result = session.execute(tables_query).all()
     for table in tables_result:
-        print("table", table)
-        table_data = TableMetadata(
-            table_name=table.table_name, schema_name=table.table_schema
-        )
-        session.add(table_data)
-        session.commit()
-        session.refresh(table_data)
-        insert_columns(session, table.table_name)
-    print("tableend", datetime.utcnow())
-    # return tables_result
 
-
-def insert_columns(session, table: str = None):
-    print("columnstart", datetime.utcnow())
-    columns_metadata = select(ColumnMetadata)
-    columns_metadata_exists = session.execute(columns_metadata).all()
-    print("columns_metadata_exists", len(columns_metadata_exists))
-    if len(columns_metadata_exists) == 0:
-        columns_query = select(ColumnInfo.column_name, ColumnInfo.table_name).where(
-            ColumnInfo.table_name == table
-        )
-        columns_result = session.execute(columns_query).all()
-        for column in columns_result:
-            print("column", column)
-            column_data = ColumnMetadata(
-                column_name=column.column_name, table_name=column.table_name
+        # Check if table already exists
+        existing_table = (
+            internalSession.query(TableMetadata)
+            .filter(
+                TableMetadata.table_name == table.table_name,
+                TableMetadata.schema_name == table.table_schema,
             )
-            session.add(column_data)
-            session.commit()
-            session.refresh(column_data)
-    print("columnend", datetime.utcnow())
+            .first()
+        )
+        if existing_table:
+
+            insert_columns(session, table.table_name, schema, internalSession)
+            # Insert table if it does not exist
+        else:
+
+            table_data = TableMetadata(
+                table_name=table.table_name, schema_name=table.table_schema
+            )
+            internalSession.add(table_data)
+            internalSession.commit()
+            internalSession.refresh(table_data)
+            insert_columns(session, table.table_name, schema, internalSession)
+
+
+def insert_columns(session, table, schema, internalSession):
+
+    columns_metadata = select(ColumnMetadata)
+    columns_metadata_exists = internalSession.execute(columns_metadata).all()
+
+    columns_query = select(ColumnInfo.column_name, ColumnInfo.table_name).where(
+        ColumnInfo.table_name == table
+    )
+    columns_result = session.execute(columns_query).all()
+    for column in columns_result:
+
+        # Check if column already exists
+        existing_column = (
+            internalSession.query(ColumnMetadata)
+            .filter(
+                ColumnMetadata.column_name == column.column_name,
+                ColumnMetadata.table_name == column.table_name,
+                ColumnMetadata.schema_name == schema,
+            )
+            .first()
+        )
+        if existing_column:
+
+            continue
+
+        column_data = ColumnMetadata(
+            column_name=column.column_name,
+            table_name=column.table_name,
+            schema_name=schema,
+        )
+        internalSession.add(column_data)
+        internalSession.commit()
+        internalSession.refresh(column_data)
+
     # return columns_result
 
 
@@ -275,7 +319,7 @@ async def register(
     db: Session = Depends(get_db),
 ):
     # user_data = User(form_data)
-    print("form_data", form_data)
+
     user = get_user(form_data.email, db)
     if user:
         raise HTTPException(
@@ -298,32 +342,73 @@ async def register(
         is_superuser=False,
         is_verified=True,
     )
-    print("user_data", user_data)
 
     return user_data
 
 
 with Session(engine) as session:
     if dialect.name == "mysql":
-        print("edb", engine.url.database)
 
         schema_query = select(SchemaInfo.schema_name).where(
             SchemaInfo.schema_name == engine.url.database
         )
-        print("schema_query", schema_query)
 
         schema_result = session.execute(schema_query).all()
 
-        print("schema_result", schema_result)
-        if len(schema_result) == 0:
+        with Session(metadata_engine) as internalSession:
+
             for schema in schema_result:
-                schema_data = SchemaMetadata(schema_name=schema[0])
-                session.add(schema_data)
-                session.commit()
-                session.refresh(schema_data)
-                insert_tables(session, schema[0])
+
+                # Check if schema already exists
+                existing_schema = (
+                    internalSession.query(SchemaMetadata)
+                    .filter(SchemaMetadata.schema_name == schema[0])
+                    .first()
+                )
+                if existing_schema:
+
+                    insert_tables(session, schema[0], internalSession)
+                else:
+
+                    schema_data = SchemaMetadata(schema_name=schema[0])  # type:ignore
+                    internalSession.add(schema_data)
+                    internalSession.commit()
+                    internalSession.refresh(schema_data)
+
+                    insert_tables(session, schema[0], internalSession)
     else:
         insert_schema(session)
+
+
+@app.get("/projects", response_model=List[UserProjectResponse])
+def get_user_projects(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Get all projects for the current user"""
+    headers = request.headers
+    token = headers.get("authorization", "").split(" ")[1]
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization token is missing",
+        )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+            )
+        query = select(UserProjectsModel).where(UserProjectsModel.user_id == user_id)
+
+        result = db.execute(query).scalars().all()
+        return result
+    except Exception as e:
+        print("e", e)
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # API Routes
@@ -346,7 +431,6 @@ def get_schemas(
     #    ),
     # )
 
-    print("query", query)
     result = db.execute(query)
     return result.scalars().all()
 
@@ -363,7 +447,7 @@ def get_tables(schema: str, limit: Optional[int] = 15, db: Session = Depends(get
         .where(TableMetadata.schema_name == schema)
         .limit(limit)
     )
-    print("gen", query)
+
     result = db.execute(query)
     return result.scalars().all()
 
@@ -379,7 +463,10 @@ def get_columns(table: str, limit: Optional[int] = 15, db: Session = Depends(get
 
 @app.get("/data/")
 def get_data(
-    schema: str, table: str, limit: Optional[int] = 15, db: Session = Depends(get_db)
+    schema: str,
+    table: str,
+    limit: Optional[int] = 15,
+    db: Session = Depends(get_source_db),
 ):
     try:
         # Method 1: Using MetaData reflection

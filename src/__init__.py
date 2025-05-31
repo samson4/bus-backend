@@ -6,4 +6,6 @@ from .models import (
     TableMetadata,
     SchemaMetadata,
     UserModel,
+    ProjectModel,
+    UserProjectsModel,
 )
