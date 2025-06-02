@@ -346,6 +346,8 @@ async def register(
     return user_data
 
 
+# @app.on_event("startup")
+# def insert_metadata():
 with Session(engine) as session:
     if dialect.name == "mysql":
 
@@ -498,6 +500,11 @@ async def read_own_items(
     current_user: User = Depends(get_current_active_user),
 ):
     return [{"item_id": "Foo", "owner": current_user.username}]
+
+
+@app.get("/")
+def read_root():
+    return "Server is running"
 
 
 if __name__ == "__main__":
