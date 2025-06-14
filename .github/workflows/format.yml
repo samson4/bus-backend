@@ -29,4 +29,4 @@ jobs:
       - name: Run Ruff Formatter Check
         run: |
           uv run ruff format --check .
-          uv run ruff check --fix --diff .
+          uv run ruff check --fix .
