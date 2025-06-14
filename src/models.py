@@ -8,7 +8,6 @@ from sqlalchemy import (
     Boolean,
     ForeignKey,
     UniqueConstraint,
-    Uuid,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, relationship

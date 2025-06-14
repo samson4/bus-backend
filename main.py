@@ -1,11 +1,11 @@
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from fastapi.security import OAuth2PasswordRequestForm
 
 from sqlalchemy import create_engine, select, Table, MetaData
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session
 
 import jwt
 from jwt.exceptions import InvalidTokenError
@@ -19,18 +19,15 @@ from src import (
     ColumnMetadata,
     SchemaMetadata,
     UserModel,
-    ProjectModel,
     UserProjectsModel,
 )
+from src.db.schemas import SchemasPaginatedResponse, TablesPaginatedResponse
 from src.db.users.userschemas import User, UserCreate, UserCreateResponse
 from src.db.projects.projectschemas import (
-    ProjectBase,
-    UserProjects,
     UserProjectResponse,
 )
 
 # from src.db.utils.decode import get_current_user
-from src.db import Schemas
 from src.db import DATABASE_URL
 from src.db.users.userschemas import oauth2_scheme, Token, TokenData
 from decouple import config as decouple_config
@@ -39,7 +36,7 @@ SECRET_KEY = decouple_config(
     "SECRET_KEY", "90ded69acb971f4f6f9a6913428503503eac012275cd9f2b13c37a0ba43f35c6"
 )
 ALGORITHM = decouple_config("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = decouple_config("ACCESS_TOKEN_EXPIRE_MINUTES", 30)
+ACCESS_TOKEN_EXPIRE_MINUTES = decouple_config("ACCESS_TOKEN_EXPIRE_MINUTES", 60)
 
 
 app = FastAPI()
@@ -133,7 +130,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=60)
 
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -345,41 +342,42 @@ async def register(
 
     return user_data
 
+@app.on_event("startup")
+def insert_metadata():
+     with Session(engine) as session:
+         if dialect.name == "mysql":
 
-# @app.on_event("startup")
-# def insert_metadata():
-with Session(engine) as session:
-    if dialect.name == "mysql":
+             schema_query = select(SchemaInfo.schema_name).where(
+                 SchemaInfo.schema_name == engine.url.database
+             )
 
-        schema_query = select(SchemaInfo.schema_name).where(
-            SchemaInfo.schema_name == engine.url.database
-        )
+             schema_result = session.execute(schema_query).all()
 
-        schema_result = session.execute(schema_query).all()
+             with Session(metadata_engine) as internalSession:
 
-        with Session(metadata_engine) as internalSession:
+                 for schema in schema_result:
 
-            for schema in schema_result:
+                     # Check if schema already exists
+                     existing_schema = (
+                         internalSession.query(SchemaMetadata)
+                         .filter(SchemaMetadata.schema_name == schema[0])
+                         .first()
+                     )
+                     if existing_schema:
 
-                # Check if schema already exists
-                existing_schema = (
-                    internalSession.query(SchemaMetadata)
-                    .filter(SchemaMetadata.schema_name == schema[0])
-                    .first()
-                )
-                if existing_schema:
+                         insert_tables(session, schema[0], internalSession)
+                     else:
 
-                    insert_tables(session, schema[0], internalSession)
-                else:
+                         schema_data = SchemaMetadata(
+                             schema_name=schema[0]
+                         )  # type:ignore
+                         internalSession.add(schema_data)
+                         internalSession.commit()
+                         internalSession.refresh(schema_data)
 
-                    schema_data = SchemaMetadata(schema_name=schema[0])  # type:ignore
-                    internalSession.add(schema_data)
-                    internalSession.commit()
-                    internalSession.refresh(schema_data)
-
-                    insert_tables(session, schema[0], internalSession)
-    else:
-        insert_schema(session)
+                         insert_tables(session, schema[0], internalSession)
+         else:
+             insert_schema(session)
 
 
 @app.get("/projects", response_model=List[UserProjectResponse])
@@ -413,12 +411,18 @@ def get_user_projects(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("project/new")
+def create_project(request: Request, form_data):
+    pass
+
+
 # API Routes
-@app.get("/schemas/", response_model=List[Schemas])
+@app.get("/schemas/", response_model=SchemasPaginatedResponse)
 def get_schemas(
     request: Request,
     schema_name: Optional[str] = None,
-    limit: Optional[int] = 15,
+    skip: int = Query(default=0, ge=0),
+    limit: Optional[int] = Query(default=15, le=100),
     db: Session = Depends(get_db),
 ):
     # headers = request.headers
@@ -432,30 +436,45 @@ def get_schemas(
     #        algorithms=["HS256"],
     #    ),
     # )
-
+    total_query = db.query(SchemaMetadata).count()
     result = db.execute(query)
-    return result.scalars().all()
+    return {
+        "data": result.scalars().all(),
+        "total": total_query,
+        "page": (skip // limit) + 1,
+        "limit": limit,
+    }
 
 
-@app.get("/tables/")
-def get_tables(schema: str, limit: Optional[int] = 15, db: Session = Depends(get_db)):
+@app.get("/tables/", response_model=TablesPaginatedResponse)
+def get_tables(
+    schema: str,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=15, le=100),
+    db: Session = Depends(get_db),
+):
     """Get all tables with schema filter"""
-    BusMetadataAlias = aliased(SchemaMetadata)
+
     query = (
-        select(TableMetadata, BusMetadataAlias)
-        .join(
-            BusMetadataAlias, TableMetadata.schema_name == BusMetadataAlias.schema_name
-        )
+        select(TableMetadata)
         .where(TableMetadata.schema_name == schema)
         .limit(limit)
+        .offset(skip)
     )
-
+    total_query = (
+        db.query(TableMetadata).filter(TableMetadata.schema_name == schema).count()
+    )
     result = db.execute(query)
-    return result.scalars().all()
+    return {
+        "data": result.scalars().all(),
+        "total": total_query,
+        "page": (skip // limit) + 1,
+        "limit": limit,
+    }
 
 
 @app.get("/columns/")
-def get_columns(table: str, limit: Optional[int] = 15, db: Session = Depends(get_db)):
+def get_columns(table: str, limit: Optional[int] = 30, db: Session = Depends(get_db)):
     query = (
         select(ColumnMetadata).where(ColumnMetadata.table_name == table).limit(limit)
     )
@@ -467,7 +486,8 @@ def get_columns(table: str, limit: Optional[int] = 15, db: Session = Depends(get
 def get_data(
     schema: str,
     table: str,
-    limit: Optional[int] = 15,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=15, le=100),
     db: Session = Depends(get_source_db),
 ):
     try:
@@ -475,9 +495,17 @@ def get_data(
         metadata = MetaData(schema=schema)
         # Reflect only the specific table
         target_table = Table(table, metadata, autoload_with=db.bind)
-        query = select(target_table).limit(limit)
+        query = select(target_table).limit(limit).offset(skip)
+
+        total_data = db.query(target_table).count()
+        print("total_data", total_data)
         result = db.execute(query)
-        return result.mappings().all()
+        return {
+            "data": result.mappings().all(),
+            "total": total_data,
+            "page": (skip // limit) + 1,
+            "limit": limit,
+        }
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

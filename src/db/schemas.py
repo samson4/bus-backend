@@ -1,3 +1,4 @@
+from typing import List
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -32,3 +33,54 @@ class Columns(BaseModel):
 #     schemas: list[Schemas]
 #     tables: list[Tables]
 #     columns: list[Columns]
+
+
+# Pydantic Models for API
+# class JobBase(BaseModel):
+#     title: str
+#     description: str
+
+# class JobCreate(JobBase):
+#     pass
+
+# class Job(JobBase):
+#     id: int
+
+#     class Config:
+#         orm_mode = True
+
+
+class TablesPaginatedResponse(BaseModel):
+    data: List[Tables]
+    total: int
+    page: int
+    limit: int
+
+
+class SchemasPaginatedResponse(BaseModel):
+    data: List[Schemas]
+    total: int
+    page: int
+    limit: int
+
+
+# T = TypeVar("T", bound=BaseModel)
+
+
+# class PaginatedResponse(BaseModel, Generic[T]):
+#     items: List[T]
+#     total: int
+#     page: int
+#     limit: int
+
+
+# @app.get("/jobs/", response_model=PaginatedResponse)
+# def list_jobs(
+#     db: Session = Depends(get_db),
+#     skip: int = Query(default=0, ge=0),
+#     limit: int = Query(default=15, le=100),
+# ):
+#     query = db.query(Job)
+#     total = query.count()
+#     jobs = query.offset(skip).limit(limit).all()
+#     return PaginatedResponse(items=jobs, total=total, page=(skip // limit) + 1, limit=limit)
