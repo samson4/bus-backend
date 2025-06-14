@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, select, Table, MetaData
 from sqlalchemy.orm import Session
 
 import jwt
-from jwt.exceptions import InvalidTokenError
+from jwt.exceptions import InvalidTokenError as InvalidTokenError
 from passlib.context import CryptContext
 
 from src import (
@@ -247,8 +247,8 @@ def insert_tables(session, schema, internalSession):
 
 def insert_columns(session, table, schema, internalSession):
 
-    columns_metadata = select(ColumnMetadata)
-    columns_metadata_exists = internalSession.execute(columns_metadata).all()
+    #columns_metadata = select(ColumnMetadata)
+    #columns_metadata_exists = internalSession.execute(columns_metadata).all()
 
     columns_query = select(ColumnInfo.column_name, ColumnInfo.table_name).where(
         ColumnInfo.table_name == table
