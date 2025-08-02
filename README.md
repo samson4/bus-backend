@@ -36,12 +36,18 @@ Add the following environment variables:
 
 1. Database Configuration
 
+For MySQL
+
 ```
-DB_HOST=localhost
-DATABASE=postgres
-DB_USER=postgres
-DB_PASSWORD=postgres
-DB_PORT=5432
+DATABASE_URL="mysql+mysqlconnector://mysqldbuser:mysqldbpassword@localhost:mysqldbport/dbname"
+
+```
+
+For PostgreSQL
+
+```
+DATABASE_URL="postgresql+psycopg2://pguser:pgpassword@localhost/pgdbname"
+
 ```
 
 2. Authentication

@@ -1,10 +1,17 @@
-from fastapi import Depends, FastAPI, HTTPException, Request, status, Query
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    status,
+    Query,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional
 from fastapi.security import OAuth2PasswordRequestForm
 
-from sqlalchemy import create_engine, select, Table, MetaData
+from sqlalchemy import create_engine, select, Table, MetaData, and_
 from sqlalchemy.orm import Session
 
 import jwt
@@ -19,13 +26,19 @@ from src import (
     ColumnMetadata,
     SchemaMetadata,
     UserModel,
+    ProjectModel,
     UserProjectsModel,
 )
 from src.db.schemas import SchemasPaginatedResponse, TablesPaginatedResponse
 from src.db.users.userschemas import User, UserCreate, UserCreateResponse
 from src.db.projects.projectschemas import (
+    ProjectBase,
     UserProjectResponse,
+    UserProjects,
+    ProjectCreate,
 )
+
+import asyncio
 
 # from src.db.utils.decode import get_current_user
 from src.db import DATABASE_URL
@@ -183,9 +196,7 @@ async def get_current_active_user(
     return current_user
 
 
-def insert_schema(
-    session,
-):
+async def insert_schema(session):
     with Session(metadata_engine) as internalSession:
         schema_query = select(SchemaInfo.schema_name).where(
             SchemaInfo.schema_name.notin_(exclude_schemas)
@@ -207,13 +218,13 @@ def insert_schema(
             internalSession.add(schema_data)
             internalSession.commit()
             internalSession.refresh(schema_data)
-            insert_tables(session, schema[0], internalSession)
+            asyncio.create_task(insert_tables(session, schema[0], internalSession))
 
     # return schema_result
 
 
-def insert_tables(session, schema, internalSession):
-
+async def insert_tables(session, schema, internalSession):
+    print("insert_tables", schema)
     tables_query = select(TableInfo.table_name, TableInfo.table_schema).where(
         TableInfo.table_schema == schema
     )
@@ -232,7 +243,9 @@ def insert_tables(session, schema, internalSession):
         )
         if existing_table:
 
-            insert_columns(session, table.table_name, schema, internalSession)
+            asyncio.create_task(
+                insert_columns(session, table.table_name, schema, internalSession)
+            )
             # Insert table if it does not exist
         else:
 
@@ -242,13 +255,12 @@ def insert_tables(session, schema, internalSession):
             internalSession.add(table_data)
             internalSession.commit()
             internalSession.refresh(table_data)
-            insert_columns(session, table.table_name, schema, internalSession)
+            asyncio.create_task(
+                insert_columns(session, table.table_name, schema, internalSession)
+            )
 
 
-def insert_columns(session, table, schema, internalSession):
-
-    #columns_metadata = select(ColumnMetadata)
-    #columns_metadata_exists = internalSession.execute(columns_metadata).all()
+async def insert_columns(session, table, schema, internalSession):
 
     columns_query = select(ColumnInfo.column_name, ColumnInfo.table_name).where(
         ColumnInfo.table_name == table
@@ -342,42 +354,48 @@ async def register(
 
     return user_data
 
+
 @app.on_event("startup")
-def insert_metadata():
-     with Session(engine) as session:
-         if dialect.name == "mysql":
+async def insert_metadata():
+    print("Inserting metadata on startup")
+    with Session(engine) as session:
+        if dialect.name == "mysql":
 
-             schema_query = select(SchemaInfo.schema_name).where(
-                 SchemaInfo.schema_name == engine.url.database
-             )
+            schema_query = select(SchemaInfo.schema_name).where(
+                SchemaInfo.schema_name == engine.url.database
+            )
 
-             schema_result = session.execute(schema_query).all()
+            schema_result = session.execute(schema_query).all()
 
-             with Session(metadata_engine) as internalSession:
+            with Session(metadata_engine) as internalSession:
 
-                 for schema in schema_result:
+                for schema in schema_result:
 
-                     # Check if schema already exists
-                     existing_schema = (
-                         internalSession.query(SchemaMetadata)
-                         .filter(SchemaMetadata.schema_name == schema[0])
-                         .first()
-                     )
-                     if existing_schema:
+                    # Check if schema already exists
+                    existing_schema = (
+                        internalSession.query(SchemaMetadata)
+                        .filter(SchemaMetadata.schema_name == schema[0])
+                        .first()
+                    )
+                    if existing_schema:
+                        print("Schema already exists:")
+                        asyncio.create_task(
+                            insert_tables(session, schema[0], internalSession)
+                        )
+                    else:
 
-                         insert_tables(session, schema[0], internalSession)
-                     else:
+                        schema_data = SchemaMetadata(
+                            schema_name=schema[0]
+                        )  # type:ignore
+                        internalSession.add(schema_data)
+                        internalSession.commit()
+                        internalSession.refresh(schema_data)
 
-                         schema_data = SchemaMetadata(
-                             schema_name=schema[0]
-                         )  # type:ignore
-                         internalSession.add(schema_data)
-                         internalSession.commit()
-                         internalSession.refresh(schema_data)
-
-                         insert_tables(session, schema[0], internalSession)
-         else:
-             insert_schema(session)
+                        asyncio.create_task(
+                            insert_tables(session, schema[0], internalSession)
+                        )
+        else:
+            asyncio.create_task(insert_schema(session))
 
 
 @app.get("/projects", response_model=List[UserProjectResponse])
@@ -411,9 +429,48 @@ def get_user_projects(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("project/new")
-def create_project(request: Request, form_data):
-    pass
+@app.post("/project/new", response_model=UserProjectResponse)
+def create_project(
+    request: Request, form_data: ProjectCreate, db: Session = Depends(get_db)
+):
+    print("proj")
+    """Create a new project for the current user"""
+    headers = request.headers
+    token = headers.get("authorization", "").split(" ")[1]
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization token is missing",
+        )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+            )
+        new_project = ProjectModel(
+            project_name=form_data.project_name,
+            db_connection_string=form_data.db_connection_string,
+            created_by=user_id,
+        )
+        db.add(new_project)
+        db.commit()
+        db.refresh(new_project)
+
+        new_user_project = UserProjectsModel(
+            project_id=new_project.id,
+            user_id=user_id,
+        )
+        db.add(new_user_project)
+        db.commit()
+        db.refresh(new_user_project)
+        return new_user_project
+    except Exception as e:
+        print("e", e)
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # API Routes
@@ -449,6 +506,7 @@ def get_schemas(
 @app.get("/tables/", response_model=TablesPaginatedResponse)
 def get_tables(
     schema: str,
+    search_query: Optional[str] = "",
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=15, le=100),
     db: Session = Depends(get_db),
@@ -457,12 +515,25 @@ def get_tables(
 
     query = (
         select(TableMetadata)
-        .where(TableMetadata.schema_name == schema)
+        .where(
+            and_(
+                TableMetadata.schema_name == schema,
+                TableMetadata.table_name.contains(search_query, autoescape=True),
+            )
+        )
         .limit(limit)
         .offset(skip)
     )
+    print("query", query)
     total_query = (
-        db.query(TableMetadata).filter(TableMetadata.schema_name == schema).count()
+        db.query(TableMetadata)
+        .filter(
+            and_(
+                TableMetadata.schema_name == schema,
+                TableMetadata.table_name.contains(search_query, autoescape=True),
+            )
+        )
+        .count()
     )
     result = db.execute(query)
     return {

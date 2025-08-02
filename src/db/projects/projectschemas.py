@@ -17,7 +17,15 @@ class ProjectBase(BaseModel):
     class Config:
         orm_mode = True
 
+class ProjectCreate(BaseModel):
+    """Model for creating a new project."""
 
+    project_name: str
+    db_connection_string: str
+
+    class Config:
+        from_attributes = True
+        orm_mode = True
 class UserProjects(BaseModel):
     id: str
     project_id: str

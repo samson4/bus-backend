@@ -13,3 +13,6 @@ venv
 # workspace configurations
 .vscode/
 fastapi-tut.code-workspace
+
+# metadata database
+metadata.db
