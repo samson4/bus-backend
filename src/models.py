@@ -108,7 +108,8 @@ class SchemaInfo(Base):
 class SchemaMetadata(UniqueIDMixin, TimeStampMixin, Base):
     __tablename__ = "bus_metadata"
 
-    schema_name = Column(String(255), unique=True)
+    schema_name = Column(String(255))
+    project_id = Column(String(255), nullable=False)
     tables: Mapped[List["TableMetadata"]] = relationship(
         back_populates="schema", cascade="all, delete-orphan"
     )
@@ -116,19 +117,22 @@ class SchemaMetadata(UniqueIDMixin, TimeStampMixin, Base):
 
 class TableMetadata(Base, UniqueIDMixin, TimeStampMixin):
     __tablename__ = "table_metadata"
-    table_name = Column(String(255), unique=True)
-    schema_name = Column(String(255), ForeignKey("bus_metadata.schema_name"))
+    table_name = Column(String(255))
+    schema_name = Column(String(255))
+    schema_id = Column(String(255), ForeignKey("bus_metadata.id"), nullable=False)
     schema: Mapped["SchemaMetadata"] = relationship(back_populates="tables")
-    UniqueConstraint(
-        table_name, schema_name, name="table_name_schema_name_unique_constraint"
-    )
+    # UniqueConstraint(
+    #     table_name, schema_name, name="table_name_schema_name_unique_constraint"
+    # )
 
 
 class ColumnMetadata(Base, UniqueIDMixin, TimeStampMixin):
     __tablename__ = "column_metadata"
     column_name = Column(String(255))
-    table_name = Column(String(255), ForeignKey("table_metadata.table_name"))
-    schema_name = Column(String(255), ForeignKey("bus_metadata.schema_name"))
+    table_name = Column(String(255))
+    table_id = Column(String(255), ForeignKey("table_metadata.id"), nullable=False)
+    schema_name = Column(String(255))
+    schema_id = Column(String(255), ForeignKey("bus_metadata.id"), nullable=False)
 
 
 class UserModel(Base, UniqueIDMixin, TimeStampMixin):
@@ -160,6 +164,7 @@ class UserProjectsModel(Base, UniqueIDMixin, TimeStampMixin):
     )
     user_id = Column(String(255), ForeignKey("bus_users.id"), nullable=False)
     project = relationship("ProjectModel", back_populates="user_projects")
+    user = relationship("UserModel")
 
 
 # UserProjects response example

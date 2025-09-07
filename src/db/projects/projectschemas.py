@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from datetime import datetime
 from fastapi.security import OAuth2PasswordBearer
-
+from src.db.users.userschemas import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -22,6 +22,7 @@ class ProjectCreate(BaseModel):
 
     project_name: str
     db_connection_string: str
+    database_dialect: str
 
     class Config:
         from_attributes = True
@@ -43,6 +44,7 @@ class UserProjectResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     project: ProjectBase
+    user: User
 
     class Config:
         from_attributes = True

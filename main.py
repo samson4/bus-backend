@@ -5,14 +5,16 @@ from fastapi import (
     Request,
     status,
     Query,
+    BackgroundTasks
 )
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
+from uuid import UUID
 from fastapi.security import OAuth2PasswordRequestForm
 
 from sqlalchemy import create_engine, select, Table, MetaData, and_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 import jwt
 from jwt.exceptions import InvalidTokenError as InvalidTokenError
@@ -37,11 +39,11 @@ from src.db.projects.projectschemas import (
     UserProjects,
     ProjectCreate,
 )
-
+from src.db.config import config
 import asyncio
 
 # from src.db.utils.decode import get_current_user
-from src.db import DATABASE_URL
+from src.db import DATABASE_URL, metadata_engine, engine
 from src.db.users.userschemas import oauth2_scheme, Token, TokenData
 from decouple import config as decouple_config
 
@@ -64,8 +66,8 @@ app.add_middleware(
 )
 
 print("DATABASE_URL", DATABASE_URL)
-engine = create_engine(DATABASE_URL)
-metadata_engine = create_engine("sqlite:///./metadata.db")
+engine = engine
+metadata_engine = metadata_engine
 dialect = engine.dialect
 dialct_name = metadata_engine.dialect
 print(f"Connected database dialect: {dialect.name} {dialct_name.name}")
@@ -214,7 +216,7 @@ async def insert_schema(session):
 
                 continue
 
-            schema_data = SchemaMetadata(schema_name=schema[0])
+            schema_data = SchemaMetadata(schema_name=schema[0], project_id=1)
             internalSession.add(schema_data)
             internalSession.commit()
             internalSession.refresh(schema_data)
@@ -311,6 +313,7 @@ async def login_for_access_token(
         data={
             "sub": user.id,
             "bus": {
+                "user_id": user.id,
                 "username": user.user_name,
                 "email": user.email,
                 "disabled": user.disabled,
@@ -355,7 +358,7 @@ async def register(
     return user_data
 
 
-@app.on_event("startup")
+# @app.on_event("startup")
 async def insert_metadata():
     print("Inserting metadata on startup")
     with Session(engine) as session:
@@ -385,7 +388,8 @@ async def insert_metadata():
                     else:
 
                         schema_data = SchemaMetadata(
-                            schema_name=schema[0]
+                            schema_name=schema[0],
+                            project_id=1,
                         )  # type:ignore
                         internalSession.add(schema_data)
                         internalSession.commit()
@@ -431,9 +435,12 @@ def get_user_projects(
 
 @app.post("/project/new", response_model=UserProjectResponse)
 def create_project(
-    request: Request, form_data: ProjectCreate, db: Session = Depends(get_db)
+    request: Request, 
+    form_data: ProjectCreate, 
+     background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
 ):
-    print("proj")
+    # print("proj",form_data.db_connection_string)
     """Create a new project for the current user"""
     headers = request.headers
     token = headers.get("authorization", "").split(" ")[1]
@@ -451,9 +458,20 @@ def create_project(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token",
             )
+        config.set_config(
+            form_data.db_connection_string, form_data.database_dialect
+        )
+        db_connection_string  = config.adapter.get_connection_string()
+
+        print("db_connection_string", db_connection_string)
+        if not db_connection_string:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid database connection string",
+            )
         new_project = ProjectModel(
             project_name=form_data.project_name,
-            db_connection_string=form_data.db_connection_string,
+            db_connection_string=db_connection_string,
             created_by=user_id,
         )
         db.add(new_project)
@@ -467,24 +485,92 @@ def create_project(
         db.add(new_user_project)
         db.commit()
         db.refresh(new_user_project)
+        config.adapter.create_connection()
+        config.adapter.get_connection_string
+        background_tasks.add_task(config.adapter.initialize_metadata,project_id=new_project.id)
         return new_user_project
     except Exception as e:
         print("e", e)
+        if config.adapter:
+            config.adapter.close_connection()
         raise HTTPException(status_code=400, detail=str(e))
 
+
+@app.get("/project/select/{project_id}")
+def select_project(
+    request: Request,
+    project_id: str,
+    db: Session = Depends(get_db),
+):
+    """Select a project and set the database connection to the project's database"""
+    try:
+        # Get the user ID from the JWT token
+        token = request.headers.get("authorization", "").split(" ")[1]
+        user_id = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("sub")
+        decoded_token= jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        # Query the project with relationships
+        project_query = (
+            select(UserProjectsModel)
+            .options(joinedload(UserProjectsModel.project), joinedload(UserProjectsModel.user))
+            .where(
+                UserProjectsModel.project_id == project_id,
+                UserProjectsModel.user_id == user_id,
+            )
+        )
+
+        project = db.execute(project_query).scalars().first()
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found",
+            )
+
+        # Convert the project to the response model
+        # project_details = UserProjectResponse(**project.__dict__)
+        # print("project_details", project_details)
+
+        # Generate a JWT token with project details
+        access_token = create_access_token(
+            data={
+                "sub": decoded_token.get("sub"),
+                "bus": {
+                    "user_id": decoded_token.get("bus")["user_id"],
+                    "username": decoded_token.get("bus")["username"],
+                    "email": decoded_token.get("bus")["email"],
+                    "disabled": decoded_token.get("bus")["disabled"],
+                    "project": {
+                        "project_id": project.project.id,
+                        "project_name": project.project.project_name,
+                    },
+                },
+            }
+        )
+        return {"project_token": access_token}
+    except Exception as e:
+        print("e", e)
+        raise HTTPException(status_code=400, detail=str(e))
+        
+        
+    
 
 # API Routes
 @app.get("/schemas/", response_model=SchemasPaginatedResponse)
 def get_schemas(
     request: Request,
     schema_name: Optional[str] = None,
+    
     skip: int = Query(default=0, ge=0),
     limit: Optional[int] = Query(default=15, le=100),
     db: Session = Depends(get_db),
 ):
-    # headers = request.headers
+    headers = request.headers
     # token = headers["authorization"].split(" ")[1]
-    query = select(SchemaMetadata).limit(limit).order_by(SchemaMetadata.schema_name)
+    token = headers.get("authorization", "").split(" ")[1]
+    project_id = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("bus")['project']["project_id"]
+    # project_id =  headers["authorization"].split(" ")[1].get('bus')['project_id']
+    print(f"Debug: project_id={project_id}")  # Log the project_id for debugging
+    query = select(SchemaMetadata).where(SchemaMetadata.project_id == project_id).limit(limit).order_by(SchemaMetadata.schema_name)
+    print(f"Debug: query={query}")  # Log the query for debugging
     # print(
     #    "dec",
     #    jwt.decode(
@@ -493,7 +579,8 @@ def get_schemas(
     #        algorithms=["HS256"],
     #    ),
     # )
-    total_query = db.query(SchemaMetadata).count()
+    print("query", query)
+    total_query = db.query(SchemaMetadata).filter(SchemaMetadata.project_id == project_id).count()
     result = db.execute(query)
     return {
         "data": result.scalars().all(),
@@ -505,20 +592,25 @@ def get_schemas(
 
 @app.get("/tables/", response_model=TablesPaginatedResponse)
 def get_tables(
-    schema: str,
+    schema_id: str,
+    request: Request,
     search_query: Optional[str] = "",
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=15, le=100),
     db: Session = Depends(get_db),
 ):
     """Get all tables with schema filter"""
-
+    headers = request.headers
+    # token = headers["authorization"].split(" ")[1]
+    token = headers.get("authorization", "").split(" ")[1]
+    project_id = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("bus")['project']["project_id"]
     query = (
-        select(TableMetadata)
+        select(TableMetadata).join(SchemaMetadata, TableMetadata.schema_name == SchemaMetadata.schema_name)
         .where(
             and_(
-                TableMetadata.schema_name == schema,
-                TableMetadata.table_name.contains(search_query, autoescape=True),
+                SchemaMetadata.project_id == project_id,
+                TableMetadata.schema_id == schema_id,
+                TableMetadata.table_name.contains(search_query, autoescape=True), 
             )
         )
         .limit(limit)
@@ -529,7 +621,7 @@ def get_tables(
         db.query(TableMetadata)
         .filter(
             and_(
-                TableMetadata.schema_name == schema,
+                TableMetadata.schema_id == schema_id,
                 TableMetadata.table_name.contains(search_query, autoescape=True),
             )
         )
@@ -545,9 +637,9 @@ def get_tables(
 
 
 @app.get("/columns/")
-def get_columns(table: str, limit: Optional[int] = 30, db: Session = Depends(get_db)):
+def get_columns(table_id: str, limit: Optional[int] = 30, db: Session = Depends(get_db)):
     query = (
-        select(ColumnMetadata).where(ColumnMetadata.table_name == table).limit(limit)
+        select(ColumnMetadata).where(ColumnMetadata.table_id == table_id).limit(limit)
     )
     columns = db.execute(query)
     return columns.scalars().all()
@@ -557,48 +649,76 @@ def get_columns(table: str, limit: Optional[int] = 30, db: Session = Depends(get
 def get_data(
     schema: str,
     table: str,
+    request: Request,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=15, le=100),
-    db: Session = Depends(get_source_db),
+    db: Session = Depends(get_db)
 ):
     try:
-        # Method 1: Using MetaData reflection
-        metadata = MetaData(schema=schema)
-        # Reflect only the specific table
-        target_table = Table(table, metadata, autoload_with=db.bind)
-        query = select(target_table).limit(limit).offset(skip)
-
-        total_data = db.query(target_table).count()
+        print("config",config)
+        headers = request.headers
+        # token = headers["authorization"].split(" ")[1]
+        token = headers.get("authorization", "").split(" ")[1]
+        project_id = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("bus")['project']["project_id"]
+        db_url_query = select(ProjectModel.db_connection_string).where(ProjectModel.id == project_id)
+        db_url = db.execute(db_url_query).scalars().first()
+        schema_query = select(SchemaMetadata.schema_name).where(and_(SchemaMetadata.project_id == project_id, SchemaMetadata.id == schema))
+        schema_result = db.execute(schema_query).scalars().first()
+        print("db_url", db_url)
+        print("db_url_query", db_url_query)
+        db_engine = create_engine(db_url)
+        print("db_engine", db_engine)
+        target_db = Session(db_engine)
+        print("db", target_db)
+        query = select(Table(table, MetaData(schema=schema_result), autoload_with=target_db.bind)).limit(limit).offset(skip)
+        total_data = target_db.query(Table(table, MetaData(schema=schema_result), autoload_with=target_db.bind)).count()
         print("total_data", total_data)
-        result = db.execute(query)
+        result = target_db.execute(query)
+        
         return {
             "data": result.mappings().all(),
             "total": total_data,
             "page": (skip // limit) + 1,
             "limit": limit,
         }
+        # Method 1: Using MetaData reflection
+        # metadata = MetaData(schema=schema)
+        # # Reflect only the specific table
+        # target_table = Table(table, metadata, autoload_with=db.bind)
+        # query = select(target_table).limit(limit).offset(skip)
+
+        # total_data = db.query(target_table).count()
+        # print("total_data", total_data)
+        # result = db.execute(query)
+        # return {
+        #     "data": result.mappings().all(),
+        #     "total": total_data,
+        #     "page": (skip // limit) + 1,
+        #     "limit": limit,
+        # }
 
     except Exception as e:
+        print("e", e)
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/items/")
-async def read_items(token: str = Depends(oauth2_scheme)):
-    return {"token": token}
+# @app.get("/items/")
+# async def read_items(token: str = Depends(oauth2_scheme)):
+#     return {"token": token}
 
 
-@app.get("/users/me/", response_model=User)
-async def read_users_me(
-    current_user: User = Depends(get_current_active_user),
-):
-    return current_user
+# @app.get("/users/me/", response_model=User)
+# async def read_users_me(
+#     current_user: User = Depends(get_current_active_user),
+# ):
+#     return current_user
 
 
-@app.get("/users/me/items/")
-async def read_own_items(
-    current_user: User = Depends(get_current_active_user),
-):
-    return [{"item_id": "Foo", "owner": current_user.username}]
+# @app.get("/users/me/items/")
+# async def read_own_items(
+#     current_user: User = Depends(get_current_active_user),
+# ):
+#     return [{"item_id": "Foo", "owner": current_user.username}]
 
 
 @app.get("/")
