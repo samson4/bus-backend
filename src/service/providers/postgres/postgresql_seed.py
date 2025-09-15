@@ -67,7 +67,7 @@ exclude_tables = [
 
 class Seed:
     def __init__(self, project_id, adapter):
-        from ..config import metadata_engine
+        from ....db.config import metadata_engine
 
         self.adapter = adapter
         # self.metadata_engine = session.connection
@@ -107,8 +107,9 @@ class Seed:
                     db.query(ColumnMetadata)
                     .filter(
                         ColumnMetadata.column_name == column.column_name,
-                        ColumnMetadata.table_name == column.table_name,
-                        ColumnMetadata.schema_name == schema.schema_name,
+                        ColumnMetadata.table_id == table.id,
+                        ColumnMetadata.schema_id == schema.id
+                        
                     )
                 ).first()
                 print("existing_column:", existing_column)
@@ -208,43 +209,4 @@ class Seed:
         # db:Session = self.get_db(metadata_engine)
         # source_db:Session = self.get_source_db(self.adapter)
         with Session(self.metadata_engine) as db, Session(self.adapter) as source_db:
-            if self.adapter.dialect.name == "mysql" or self.adapter.dialect.name == "mariadb":
-                from src.models import SchemaInfo, SchemaMetadata
-
-                schema_query = select(SchemaInfo.schema_name).where(
-                    SchemaInfo.schema_name == self.adapter.url.database
-                )
-                schema_result = source_db.execute(schema_query).all()
-                for schema in schema_result:
-                    print("schema", schema[0])
-                    # Check if schema already exists in
-                    existing_schema = (
-                        db.query(SchemaMetadata)
-                        .filter(
-                            and_(
-                                SchemaMetadata.schema_name == schema[0],
-                                SchemaMetadata.project_id == self.project_id,
-                            )
-                        )
-                        .first()
-                    )
-                    if existing_schema:
-                        print("Schema already exists:")
-                        asyncio.create_task(
-                            self.insert_tables(source_db, existing_schema, db)
-                        )
-                    else:
-                        schema_data = SchemaMetadata(
-                            schema_name=schema[0],
-                            project_id=self.project_id,
-                        )  # type:ignore
-                        db.add(schema_data)
-                        db.commit()
-                        db.refresh(schema_data)
-
-                        asyncio.run(
-                            self.insert_tables(source_db, schema_data, db)
-                        )
-            else:
-                print("PostgreSQL or other db")
-                asyncio.run(self.insert_schema(source_db, db))
+            asyncio.run(self.insert_schema(source_db, db))

@@ -1,6 +1,7 @@
-from sqlalchemy import create_engine as create_engine
-from src.db.utils.seed import Seed
-class MySQLAdapter:
+from sqlalchemy import create_engine
+from .postgresql_seed import Seed
+
+class PostgreSQLAdapter:
     def __init__(self):
         self.connection = None
         self.host = None
@@ -8,13 +9,13 @@ class MySQLAdapter:
         self.user = None
         self.password = None
         self.port = None
-        self.extras = 'charset=utf8mb4&collation=utfmb4_general_ci'
-        self.dialect = "mysql"
+        self.extras = None
+        self.dialect = "postgresql"
         self.database_url = None
-        self.connector = "mysqlconnector"
+        self.connector = "psycopg2"
 
         
-
+    
     def set_connection(self, database_url):
         # Logic to set the MySQL connection using the provided URL
         # self.database_url = database_url.
@@ -28,46 +29,37 @@ class MySQLAdapter:
         #     "dialect": self.dialect,
         #     "database_url": self.database_url
         # }
-        # example connection string for mysql: "mysql+mysqlconnector://user:password@host:port/database??charset=utf8mb4&collation=utfmb4_general_ci"
+        # example connection string for mysql: "mysql+mysqlconnector://user:password@host:port/database"
         self.database = database_url.get("database")
         self.host = database_url.get("host")
         self.user = database_url.get("user")
         self.password = database_url.get("password")
-        self.port = database_url.get("port", 3306)  # Default MySQL port is 3306
+        self.port = database_url.get("port", 5432)  # Default POSTGRESQL port is 5432
         self.extras = database_url.get("extras")
-        self.dialect = database_url.get("dialect", "mysql")
-        
-        
+        self.dialect = database_url.get("dialect", "postgresql")
+        print("pg", self.database, self.host, self.user, self.password, self.port, self.extras, self.dialect)
 
     def get_connection_string(self):
         if not self.database or not self.host or not self.user or not self.password:
             raise ValueError("Database connection parameters are not set.")
         
-        return f"{self.dialect}+{self.connector}://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}?{self.extras}"   
+        return f"{self.dialect}+{self.connector}://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"   
 
 
     def create_connection(self):
-        try:
-            
-            from src.models import  SchemaMetadata, ColumnMetadata, TableMetadata
-            # Logic to create a MySQL connection
-            self.connection = create_engine(self.get_connection_string())
-            print("mysql connection", self.connection)
+        from src.models import  SchemaMetadata, ColumnMetadata, TableMetadata
+        # Logic to create a MySQL connection
+        self.connection = create_engine(self.get_connection_string())
+        print("pg connection", self.connection)
+        SchemaMetadata.metadata.create_all(bind=self.connection)
+        ColumnMetadata.metadata.create_all(bind=self.connection)
+        TableMetadata.metadata.create_all(bind=self.connection)
         
-            # SchemaMetadata.metadata.create_all(bind=self.connection)
-            # ColumnMetadata.metadata.create_all(bind=self.connection)
-            # TableMetadata.metadata.create_all(bind=self.connection)
-        except Exception as e:
-            print("Error creating tables:", e)
-            raise e
-
     def initialize_metadata(self, project_id):
        
         # Logic to initialize metadata for the project
         seed_data = Seed(project_id=project_id, adapter=self.connection)
         seed_data.insert_metadata()
-            
-
     def close_connection(self):
         # Logic to close the MySQL connection
         if self.connection:
@@ -75,8 +67,6 @@ class MySQLAdapter:
             self.connection = None
         else:
             raise ValueError("No active connection to close.")
-        
-        
 
 
-mysql_adapter = MySQLAdapter()   
+postgresql_adapter = PostgreSQLAdapter()

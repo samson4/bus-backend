@@ -637,7 +637,7 @@ def get_tables(
 
 
 @app.get("/columns/")
-def get_columns(table_id: str, limit: Optional[int] = 30, db: Session = Depends(get_db)):
+def get_columns(table_id: str, limit: Optional[int] = 100, db: Session = Depends(get_db)):
     query = (
         select(ColumnMetadata).where(ColumnMetadata.table_id == table_id).limit(limit)
     )
@@ -671,6 +671,7 @@ def get_data(
         target_db = Session(db_engine)
         print("db", target_db)
         query = select(Table(table, MetaData(schema=schema_result), autoload_with=target_db.bind)).limit(limit).offset(skip)
+        print("query", query)
         total_data = target_db.query(Table(table, MetaData(schema=schema_result), autoload_with=target_db.bind)).count()
         print("total_data", total_data)
         result = target_db.execute(query)
@@ -681,44 +682,42 @@ def get_data(
             "page": (skip // limit) + 1,
             "limit": limit,
         }
-        # Method 1: Using MetaData reflection
-        # metadata = MetaData(schema=schema)
-        # # Reflect only the specific table
-        # target_table = Table(table, metadata, autoload_with=db.bind)
-        # query = select(target_table).limit(limit).offset(skip)
-
-        # total_data = db.query(target_table).count()
-        # print("total_data", total_data)
-        # result = db.execute(query)
-        # return {
-        #     "data": result.mappings().all(),
-        #     "total": total_data,
-        #     "page": (skip // limit) + 1,
-        #     "limit": limit,
-        # }
 
     except Exception as e:
         print("e", e)
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# @app.get("/items/")
-# async def read_items(token: str = Depends(oauth2_scheme)):
-#     return {"token": token}
+@app.post("/table/new")
+def create_new_table(
+    request:Request,
+    
+    db: Session = Depends(get_db)
+):
+    """Endpoint for creating new table in the corresponding database
+     e.g.::
 
+        mytable = Table(
+            "mytable",
+            metadata,
+            Column("mytable_id", Integer, primary_key=True),
+            Column("value", String(50)),
+        )
+    """
+    headers = request.headers
+    # token = headers["authorization"].split(" ")[1]
+    token = headers.get("authorization", "").split(" ")[1]
+    project_id = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("bus")['project']["project_id"]
+    db_url_query = select(ProjectModel.db_connection_string).where(ProjectModel.id == project_id)
+    db_url = db.execute(db_url_query).scalars().first()
+    db_engine = create_engine(db_url)
+    print("db_engine", db_engine)
+    target_db = Session(db_engine)
+    print("db", target_db)
+    Table(
 
-# @app.get("/users/me/", response_model=User)
-# async def read_users_me(
-#     current_user: User = Depends(get_current_active_user),
-# ):
-#     return current_user
-
-
-# @app.get("/users/me/items/")
-# async def read_own_items(
-#     current_user: User = Depends(get_current_active_user),
-# ):
-#     return [{"item_id": "Foo", "owner": current_user.username}]
+    )
+    pass
 
 
 @app.get("/")

@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine as create_engine
-from src.db.utils.seed import Seed
+from .mysql_seed import Seed
 class MySQLAdapter:
     def __init__(self):
         self.connection = None
@@ -48,7 +48,6 @@ class MySQLAdapter:
 
     def create_connection(self):
         try:
-            
             from src.models import  SchemaMetadata, ColumnMetadata, TableMetadata
             # Logic to create a MySQL connection
             self.connection = create_engine(self.get_connection_string())

@@ -1,5 +1,4 @@
-# from sqlalchemy import create_engine, select, Table, MetaData, and_
-# from service.providers import mysql_adapter, postgre_adapter
+
 import asyncio
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, select, Table, MetaData, and_
@@ -7,40 +6,6 @@ from fastapi import (
     Depends,
 )
 
-# SUPPORTED_DATABASES = {
-#     "PostgreSQL": "PostgreSQL",
-#     "MySQL": mysql_adapter,
-#     "SQLite": "SQLite",
-#     "Oracle": "Oracle",
-#     "Microsoft SQL Server": "MSSQL"
-# }
-
-# class Metadata:
-#     def __init__(self):
-#         self.database_dialect = SUPPORTED_DATABASES["PostgreSQL"]
-#         self.connection_string = None
-
-
-#     def set_connection_string(self, connection_string: str):
-#         self.connection_string = connection_string
-
-
-#     def get_connection_string(self) -> str:
-#         if not self.connection_string:
-#             raise ValueError("Connection string is not set.")
-#         return self.connection_string
-
-
-#     def  insert_metadata(self, db):
-#         if not self.connection_string:
-#             raise ValueError("Connection string is not set.")
-#         DATABASE_URL = self.get_connection_string()
-#         engine = create_engine(DATABASE_URL)
-
-#         self.database_dialect =SUPPORTED_DATABASES.get(
-#             engine.dialect.name, "Unknown"
-#         )
-#         self.
 exclude_schemas = [
     "information_schema",
     "pg_catalog",
@@ -67,7 +32,7 @@ exclude_tables = [
 
 class Seed:
     def __init__(self, project_id, adapter):
-        from ..config import metadata_engine
+        from ....db.config import metadata_engine
 
         self.adapter = adapter
         # self.metadata_engine = session.connection
@@ -208,43 +173,41 @@ class Seed:
         # db:Session = self.get_db(metadata_engine)
         # source_db:Session = self.get_source_db(self.adapter)
         with Session(self.metadata_engine) as db, Session(self.adapter) as source_db:
-            if self.adapter.dialect.name == "mysql" or self.adapter.dialect.name == "mariadb":
-                from src.models import SchemaInfo, SchemaMetadata
+            
+            from src.models import SchemaInfo, SchemaMetadata
 
-                schema_query = select(SchemaInfo.schema_name).where(
-                    SchemaInfo.schema_name == self.adapter.url.database
-                )
-                schema_result = source_db.execute(schema_query).all()
-                for schema in schema_result:
-                    print("schema", schema[0])
-                    # Check if schema already exists in
-                    existing_schema = (
-                        db.query(SchemaMetadata)
-                        .filter(
-                            and_(
-                                SchemaMetadata.schema_name == schema[0],
-                                SchemaMetadata.project_id == self.project_id,
-                            )
+            schema_query = select(SchemaInfo.schema_name).where(
+                SchemaInfo.schema_name == self.adapter.url.database
+            )
+            schema_result = source_db.execute(schema_query).all()
+            for schema in schema_result:
+                print("schema", schema[0])
+                # Check if schema already exists in
+                existing_schema = (
+                    db.query(SchemaMetadata)
+                    .filter(
+                        and_(
+                            SchemaMetadata.schema_name == schema[0],
+                            SchemaMetadata.project_id == self.project_id,
                         )
-                        .first()
                     )
-                    if existing_schema:
-                        print("Schema already exists:")
-                        asyncio.create_task(
-                            self.insert_tables(source_db, existing_schema, db)
-                        )
-                    else:
-                        schema_data = SchemaMetadata(
-                            schema_name=schema[0],
-                            project_id=self.project_id,
-                        )  # type:ignore
-                        db.add(schema_data)
-                        db.commit()
-                        db.refresh(schema_data)
+                    .first()
+                )
+                if existing_schema:
+                    print("Schema already exists:")
+                    asyncio.create_task(
+                        self.insert_tables(source_db, existing_schema, db)
+                    )
+                else:
+                    schema_data = SchemaMetadata(
+                        schema_name=schema[0],
+                        project_id=self.project_id,
+                    )  # type:ignore
+                    db.add(schema_data)
+                    db.commit()
+                    db.refresh(schema_data)
 
-                        asyncio.run(
-                            self.insert_tables(source_db, schema_data, db)
-                        )
-            else:
-                print("PostgreSQL or other db")
-                asyncio.run(self.insert_schema(source_db, db))
+                    asyncio.run(
+                        self.insert_tables(source_db, schema_data, db)
+                    )
+            

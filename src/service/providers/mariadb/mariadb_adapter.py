@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine as create_engine
-from src.db.utils.seed import Seed
-class MySQLAdapter:
+from .mariadb_seed import Seed
+class MariaDBAdapter:
     def __init__(self):
         self.connection = None
         self.host = None
@@ -9,14 +9,14 @@ class MySQLAdapter:
         self.password = None
         self.port = None
         self.extras = 'charset=utf8mb4&collation=utfmb4_general_ci'
-        self.dialect = "mysql"
+        self.dialect = "mariadb"
         self.database_url = None
-        self.connector = "mysqlconnector"
+        self.connector = "mariadbconnector"
 
         
 
     def set_connection(self, database_url):
-        # Logic to set the MySQL connection using the provided URL
+        # Logic to set the MARIADB connection using the provided URL
         # self.database_url = database_url.
         # database_url is Dict format {
         #     "host": self.host,
@@ -28,14 +28,14 @@ class MySQLAdapter:
         #     "dialect": self.dialect,
         #     "database_url": self.database_url
         # }
-        # example connection string for mysql: "mysql+mysqlconnector://user:password@host:port/database??charset=utf8mb4&collation=utfmb4_general_ci"
+        # example connection string for mariadb: "mariadb+mariadbconnector://<user>:<password>@<host>[:<port>]/<dbname>?charset=utf8mb4&collation=utfmb4_general_ci"
         self.database = database_url.get("database")
         self.host = database_url.get("host")
         self.user = database_url.get("user")
         self.password = database_url.get("password")
-        self.port = database_url.get("port", 3306)  # Default MySQL port is 3306
+        self.port = database_url.get("port", 3306)  # Default MARIADB port is 3306
         self.extras = database_url.get("extras")
-        self.dialect = database_url.get("dialect", "mysql")
+        self.dialect = database_url.get("dialect", "mariadb")
         
         
 
@@ -48,12 +48,12 @@ class MySQLAdapter:
 
     def create_connection(self):
         try:
-            
             from src.models import  SchemaMetadata, ColumnMetadata, TableMetadata
-            # Logic to create a MySQL connection
+            # Logic to create a MARIADB connection
             self.connection = create_engine(self.get_connection_string())
             print("mysql connection", self.connection)
         
+            
             # SchemaMetadata.metadata.create_all(bind=self.connection)
             # ColumnMetadata.metadata.create_all(bind=self.connection)
             # TableMetadata.metadata.create_all(bind=self.connection)
@@ -79,4 +79,4 @@ class MySQLAdapter:
         
 
 
-mysql_adapter = MySQLAdapter()   
+mariadb_adapter = MariaDBAdapter()   

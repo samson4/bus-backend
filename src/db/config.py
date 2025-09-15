@@ -1,8 +1,23 @@
 from decouple import config as decouple_config
 from urllib.parse import urlparse
-from ..service.providers import mysql_adapter, postgresql_adapter
+from ..service.providers import mysql_adapter, postgresql_adapter, postgres, mariadb, mysql
 from sqlalchemy import create_engine
 
+
+SUPPORTED_DATABASES = {
+    "postgresql": {
+        "adapter": postgres.postgresql_adapter.postgresql_adapter,
+        "seed": postgres.postgresql_seed
+    },
+    "mysql": {
+        "adapter": mysql.mysql_adapter.mysql_adapter,
+        "seed": mysql.mysql_seed
+    },
+    "mariadb": {
+        "adapter": mariadb.mariadb_adapter.mariadb_adapter,
+        "seed": mariadb.mariadb_seed
+    }
+}
 class Config:
     def __init__(self):
         self.host = None
@@ -32,22 +47,21 @@ class Config:
         self.database = parsed_url.path.lstrip('/')
         self.user = parsed_url.username
         self.password = parsed_url.password
-        self.port = parsed_url.port if parsed_url.port else (5432 if database_dialect == "postgresql" else (3306 if database_dialect == "mysql" else ""))
+        self.port = parsed_url.port if parsed_url.port else (5432 if database_dialect == "postgresql" else (3306 if database_dialect == "mysql" or database_dialect == "mariadb" else None))
         self.extras = parsed_url.query
         self.dialect = database_dialect
         self.database_url = self.get_config()
         self.adapter = None
-        if self.dialect == "postgresql":
-            self.adapter = postgresql_adapter.postgresql_adapter
+        
+        database_info = SUPPORTED_DATABASES.get(self.dialect)
+        if database_info:
+            self.adapter = database_info["adapter"]
             print("set connection", self.adapter)
-            
             self.adapter.set_connection(self.get_config())
-        elif self.dialect == "mysql":
-            self.adapter = mysql_adapter.mysql_adapter
+        else:
+            raise ValueError(f"Unsupported database dialect: {self.dialect}")
             
-            self.adapter.set_connection(self.get_config())
-
-
+        
     def get_config(self):
         """
         Get the current database configuration.

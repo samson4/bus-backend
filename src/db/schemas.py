@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -63,6 +63,17 @@ class SchemasPaginatedResponse(BaseModel):
     page: int
     limit: int
 
+class ColumnCreate(BaseModel):
+    column_name: str
+    column_type: str
+    length: int
+    not_null: bool
+    default_value: Optional[str] = None
+
+class TableCreate(BaseModel):
+    table_name: str
+    columns : List[ColumnCreate]
+
 
 # T = TypeVar("T", bound=BaseModel)
 
@@ -84,3 +95,4 @@ class SchemasPaginatedResponse(BaseModel):
 #     total = query.count()
 #     jobs = query.offset(skip).limit(limit).all()
 #     return PaginatedResponse(items=jobs, total=total, page=(skip // limit) + 1, limit=limit)
+

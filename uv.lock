@@ -297,6 +297,7 @@ dependencies = [
     { name = "gunicorn" },
     { name = "httpx" },
     { name = "jinja2" },
+    { name = "mariadb" },
     { name = "mysql-connector-python" },
     { name = "passlib", extra = ["bcrypt"] },
     { name = "psycopg2-binary" },
@@ -319,6 +320,7 @@ requires-dist = [
     { name = "gunicorn", specifier = ">=23.0.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jinja2", specifier = ">=3.1.6" },
+    { name = "mariadb", specifier = ">=1.1.13" },
     { name = "mysql-connector-python", specifier = ">=9.3.0" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
@@ -440,6 +442,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0f/d3/5ff936d8319ac86b9c409f1501b07c426e6ad41966fedace9ef1b966e23f/kombu-5.5.4.tar.gz", hash = "sha256:886600168275ebeada93b888e831352fe578168342f0d1d5833d88ba0d847363", size = 461992, upload-time = "2025-06-01T10:19:22.281Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ef/70/a07dcf4f62598c8ad579df241af55ced65bed76e42e45d3c368a6d82dbc1/kombu-5.5.4-py3-none-any.whl", hash = "sha256:a12ed0557c238897d8e518f1d1fdf84bd1516c5e305af2dacd85c2015115feb8", size = 210034, upload-time = "2025-06-01T10:19:20.436Z" },
+]
+
+[[package]]
+name = "mariadb"
+version = "1.1.13"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b0/a0/0498c90f46940b6fd7f5c76d22df9f011849964e94e0b22fde26c42191c7/mariadb-1.1.13.tar.gz", hash = "sha256:3a0fd24fae2b9990dc13a0a427a43d4a5434cc2a8c3b260a27f40b7824719037", size = 111126, upload-time = "2025-07-11T09:55:11.147Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/16/583719e127774294d4af085a063b38f20407801cd9194a676334fb121edd/mariadb-1.1.13-cp313-cp313-win32.whl", hash = "sha256:36c644c13ecf3e38cb89f37f9bd054703760b94c881476492fe789801a063ce3", size = 185301, upload-time = "2025-07-11T09:55:03.486Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/da/4170f5532813ffba2641f821ed23ed1f22fa3ff8d603e47c91b0776ff9b7/mariadb-1.1.13-cp313-cp313-win_amd64.whl", hash = "sha256:6ec51ad2e33312c397cfcc5e2bca59861f572d5e8880e025d43db9a5d472a3a9", size = 202105, upload-time = "2025-07-11T09:55:05.681Z" },
 ]
 
 [[package]]
