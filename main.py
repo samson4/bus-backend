@@ -13,7 +13,7 @@ from typing import Dict, List, Optional
 from uuid import UUID
 from fastapi.security import OAuth2PasswordRequestForm
 
-from sqlalchemy import create_engine, select, Table, MetaData, and_
+from sqlalchemy import create_engine, select, Table, MetaData, and_,text
 from sqlalchemy.orm import Session, joinedload
 
 import jwt
@@ -72,10 +72,10 @@ dialect = engine.dialect
 dialct_name = metadata_engine.dialect
 print(f"Connected database dialect: {dialect.name} {dialct_name.name}")
 
-SchemaMetadata.metadata.create_all(bind=engine)
-ColumnMetadata.metadata.create_all(bind=engine)
+# SchemaMetadata.metadata.create_all(bind=engine)
+# ColumnMetadata.metadata.create_all(bind=engine)
 UserModel.metadata.create_all(bind=metadata_engine)
-TableMetadata.metadata.create_all(bind=engine)
+# TableMetadata.metadata.create_all(bind=engine)
 
 
 exclude_schemas = [
@@ -296,6 +296,44 @@ async def insert_columns(session, table, schema, internalSession):
     # return columns_result
 
 
+@app.middleware("http")
+async def verify_token(request: Request, call_next):
+    if request.method == "OPTIONS":
+        response = await call_next(request)
+        return response
+    if request.url.path in ["/token", "/register", "/docs", "/openapi.json", "/redoc"]:
+        response = await call_next(request)
+        return response
+    authorization = request.headers.get("authorization")
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing",
+        )
+    token = authorization.split(" ")[1]
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization token is missing",
+        )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+            )
+        request.state.user = payload.get("bus")
+        response = await call_next(request)
+        return response
+    except Exception as e:
+        print("e", e)
+        raise HTTPException(status_code=400, detail=str(e)) 
+        
+           
+
 @app.post("/token")
 async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -408,17 +446,10 @@ def get_user_projects(
     db: Session = Depends(get_db),
 ):
     """Get all projects for the current user"""
-    headers = request.headers
-    token = headers.get("authorization", "").split(" ")[1]
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization token is missing",
-        )
+    
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("sub")
-
+        
+        user_id = request.state.user.get("user_id")
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -506,7 +537,7 @@ def select_project(
     try:
         # Get the user ID from the JWT token
         token = request.headers.get("authorization", "").split(" ")[1]
-        user_id = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("sub")
+        user_id = request.state.user.get("user_id")
         decoded_token= jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         # Query the project with relationships
         project_query = (
@@ -563,22 +594,18 @@ def get_schemas(
     limit: Optional[int] = Query(default=15, le=100),
     db: Session = Depends(get_db),
 ):
-    headers = request.headers
-    # token = headers["authorization"].split(" ")[1]
-    token = headers.get("authorization", "").split(" ")[1]
-    project_id = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("bus")['project']["project_id"]
-    # project_id =  headers["authorization"].split(" ")[1].get('bus')['project_id']
+    user = request.state.user
+    project = user.get("project")
+    project_id = project.get("project_id")
+    if not project_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project not selected",
+        )
     print(f"Debug: project_id={project_id}")  # Log the project_id for debugging
     query = select(SchemaMetadata).where(SchemaMetadata.project_id == project_id).limit(limit).order_by(SchemaMetadata.schema_name)
     print(f"Debug: query={query}")  # Log the query for debugging
-    # print(
-    #    "dec",
-    #    jwt.decode(
-    #        token,
-    #        SECRET_KEY,
-    #        algorithms=["HS256"],
-    #    ),
-    # )
+  
     print("query", query)
     total_query = db.query(SchemaMetadata).filter(SchemaMetadata.project_id == project_id).count()
     result = db.execute(query)
@@ -600,10 +627,9 @@ def get_tables(
     db: Session = Depends(get_db),
 ):
     """Get all tables with schema filter"""
-    headers = request.headers
-    # token = headers["authorization"].split(" ")[1]
-    token = headers.get("authorization", "").split(" ")[1]
-    project_id = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("bus")['project']["project_id"]
+    user = request.state.user
+    project = user.get("project")
+    project_id = project.get("project_id")
     query = (
         select(TableMetadata).join(SchemaMetadata, TableMetadata.schema_name == SchemaMetadata.schema_name)
         .where(
@@ -656,10 +682,9 @@ def get_data(
 ):
     try:
         print("config",config)
-        headers = request.headers
-        # token = headers["authorization"].split(" ")[1]
-        token = headers.get("authorization", "").split(" ")[1]
-        project_id = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("bus")['project']["project_id"]
+        user = request.state.user
+        project = user.get("project")
+        project_id = project.get("project_id")
         db_url_query = select(ProjectModel.db_connection_string).where(ProjectModel.id == project_id)
         db_url = db.execute(db_url_query).scalars().first()
         schema_query = select(SchemaMetadata.schema_name).where(and_(SchemaMetadata.project_id == project_id, SchemaMetadata.id == schema))
@@ -704,10 +729,9 @@ def create_new_table(
             Column("value", String(50)),
         )
     """
-    headers = request.headers
-    # token = headers["authorization"].split(" ")[1]
-    token = headers.get("authorization", "").split(" ")[1]
-    project_id = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("bus")['project']["project_id"]
+    user = request.state.user
+    project = user.get("project")
+    project_id = project.get("project_id")
     db_url_query = select(ProjectModel.db_connection_string).where(ProjectModel.id == project_id)
     db_url = db.execute(db_url_query).scalars().first()
     db_engine = create_engine(db_url)
@@ -719,7 +743,35 @@ def create_new_table(
     )
     pass
 
+@app.post("/query/execute")
+def execute_query(
+    query:str,
+    request:Request,
+    db: Session = Depends(get_db)
+):
+    """Endpoint for executing arbitrary SQL queries on the selected project database"""
+    
 
+    try:
+        user = request.state.user
+        print("user", user)
+        project = user.get("project")
+        project_id = project.get("project_id")
+        db_url_query = select(ProjectModel.db_connection_string).where(ProjectModel.id == project_id)
+        db_url = db.execute(db_url_query).scalars().first()
+        db_engine = create_engine(db_url)
+        print("db_engine", db_engine)
+        target_db = Session(db_engine)
+        print("db", target_db)
+        t = text(query)
+        result = target_db.execute(t)
+            
+        return {
+            "data": result.mappings().all(),
+        }
+    except Exception as e:
+        print("e", e)
+        raise HTTPException(status_code=400, detail=str(e))
 @app.get("/")
 def read_root():
     return "Server is running"
