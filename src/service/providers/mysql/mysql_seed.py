@@ -107,8 +107,8 @@ class Seed:
                     db.query(ColumnMetadata)
                     .filter(
                         ColumnMetadata.column_name == column.column_name,
-                        ColumnMetadata.table_name == column.table_name,
-                        ColumnMetadata.schema_name == schema.schema_name,
+                        ColumnMetadata.table_id == table.id,
+                        ColumnMetadata.schema_id == schema.id,
                     )
                 ).first()
                 print("existing_column:", existing_column)

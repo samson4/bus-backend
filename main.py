@@ -776,10 +776,18 @@ def execute_query(
             )
         t = text(query_str)
         result = target_db.execute(t)
-            
-        return {
+        
+        if result.returns_rows:
+            print("result", result)
+            # print("result.keys()", result.keys())
+            # print("result.mappings().all()", result.mappings().all())
+            return {
             "data": result.mappings().all(),
         }
+        else:
+            target_db.commit()
+            return {"message": "Query executed successfully."}
+        
     except Exception as e:
         print("e", e)
         raise HTTPException(status_code=400, detail=str(e))

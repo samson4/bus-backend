@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 
 [[package]]
@@ -105,6 +105,55 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7c/58/1546c970afcd2a2428b1bfafecf2371d8951cc34b46701bea73f4280989e/billiard-4.2.1.tar.gz", hash = "sha256:12b641b0c539073fc8d3f5b8b7be998956665c4233c7c1fcd66a7e677c4fb36f", size = 155031, upload-time = "2024-09-21T13:40:22.491Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/30/da/43b15f28fe5f9e027b41c539abc5469052e9d48fd75f8ff094ba2a0ae767/billiard-4.2.1-py3-none-any.whl", hash = "sha256:40b59a4ac8806ba2c2369ea98d876bc6108b051c227baffd928c644d15d8f3cb", size = 86766, upload-time = "2024-09-21T13:40:20.188Z" },
+]
+
+[[package]]
+name = "bus-backend"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "authlib" },
+    { name = "celery" },
+    { name = "fastapi" },
+    { name = "gunicorn" },
+    { name = "httpx" },
+    { name = "jinja2" },
+    { name = "mariadb" },
+    { name = "mysql-connector-python" },
+    { name = "passlib", extra = ["bcrypt"] },
+    { name = "psycopg2-binary" },
+    { name = "pydantic", extra = ["email"] },
+    { name = "pyjwt" },
+    { name = "python-decouple" },
+    { name = "python-multipart" },
+    { name = "ruff" },
+    { name = "sqlalchemy" },
+    { name = "sqlalchemy-utils" },
+    { name = "sqlmodel" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "authlib", specifier = ">=1.6.0" },
+    { name = "celery", specifier = ">=5.5.3" },
+    { name = "fastapi", specifier = ">=0.115.12" },
+    { name = "gunicorn", specifier = ">=23.0.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "jinja2", specifier = ">=3.1.6" },
+    { name = "mariadb", specifier = ">=1.1.13" },
+    { name = "mysql-connector-python", specifier = ">=9.3.0" },
+    { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
+    { name = "psycopg2-binary", specifier = ">=2.9.10" },
+    { name = "pydantic", extras = ["email"], specifier = ">=2.11.2" },
+    { name = "pyjwt", specifier = ">=2.10.1" },
+    { name = "python-decouple", specifier = ">=3.8" },
+    { name = "python-multipart", specifier = ">=0.0.20" },
+    { name = "ruff", specifier = ">=0.11.3" },
+    { name = "sqlalchemy", specifier = ">=2.0.40" },
+    { name = "sqlalchemy-utils", specifier = ">=0.41.2" },
+    { name = "sqlmodel", specifier = ">=0.0.24" },
+    { name = "uvicorn", specifier = ">=0.34.0" },
 ]
 
 [[package]]
@@ -284,55 +333,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f4/55/ae499352d82338331ca1e28c7f4a63bfd09479b16395dce38cf50a39e2c2/fastapi-0.115.12.tar.gz", hash = "sha256:1e2c2a2646905f9e83d32f04a3f86aff4a286669c6c950ca95b5fd68c2602681", size = 295236, upload-time = "2025-03-23T22:55:43.822Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/50/b3/b51f09c2ba432a576fe63758bddc81f78f0c6309d9e5c10d194313bf021e/fastapi-0.115.12-py3-none-any.whl", hash = "sha256:e94613d6c05e27be7ffebdd6ea5f388112e5e430c8f7d6494a9d1d88d43e814d", size = 95164, upload-time = "2025-03-23T22:55:42.101Z" },
-]
-
-[[package]]
-name = "fastapi-tut"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "authlib" },
-    { name = "celery" },
-    { name = "fastapi" },
-    { name = "gunicorn" },
-    { name = "httpx" },
-    { name = "jinja2" },
-    { name = "mariadb" },
-    { name = "mysql-connector-python" },
-    { name = "passlib", extra = ["bcrypt"] },
-    { name = "psycopg2-binary" },
-    { name = "pydantic", extra = ["email"] },
-    { name = "pyjwt" },
-    { name = "python-decouple" },
-    { name = "python-multipart" },
-    { name = "ruff" },
-    { name = "sqlalchemy" },
-    { name = "sqlalchemy-utils" },
-    { name = "sqlmodel" },
-    { name = "uvicorn" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "authlib", specifier = ">=1.6.0" },
-    { name = "celery", specifier = ">=5.5.3" },
-    { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "gunicorn", specifier = ">=23.0.0" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "jinja2", specifier = ">=3.1.6" },
-    { name = "mariadb", specifier = ">=1.1.13" },
-    { name = "mysql-connector-python", specifier = ">=9.3.0" },
-    { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
-    { name = "psycopg2-binary", specifier = ">=2.9.10" },
-    { name = "pydantic", extras = ["email"], specifier = ">=2.11.2" },
-    { name = "pyjwt", specifier = ">=2.10.1" },
-    { name = "python-decouple", specifier = ">=3.8" },
-    { name = "python-multipart", specifier = ">=0.0.20" },
-    { name = "ruff", specifier = ">=0.11.3" },
-    { name = "sqlalchemy", specifier = ">=2.0.40" },
-    { name = "sqlalchemy-utils", specifier = ">=0.41.2" },
-    { name = "sqlmodel", specifier = ">=0.0.24" },
-    { name = "uvicorn", specifier = ">=0.34.0" },
 ]
 
 [[package]]
