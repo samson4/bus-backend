@@ -1,5 +1,5 @@
-from typing import List, Optional
-from pydantic import BaseModel
+from typing import Generic, List, Optional, TypeVar, Any
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 
 
@@ -63,16 +63,26 @@ class SchemasPaginatedResponse(BaseModel):
     page: int
     limit: int
 
-class ColumnCreate(BaseModel):
-    column_name: str
-    column_type: str
-    length: int
-    not_null: bool
-    default_value: Optional[str] = None
+T = TypeVar("T", bound="Any")
 
-class TableCreate(BaseModel):
-    table_name: str
-    columns : List[ColumnCreate]
+
+# class ColumnCreateBase(BaseModel):
+#     column_name: str
+#     column_type: Generic[T]
+#     length: int
+#     not_null: bool
+#     default_value: Optional[Any] = None
+
+#     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+# # class ColumnCreate(ColumnCreateBase): 
+#     # pass
+    
+
+# class TableCreate(BaseModel):
+#     table_name: str
+#     columns : List[ColumnCreateBase]
+
 
 
 # T = TypeVar("T", bound=BaseModel)
