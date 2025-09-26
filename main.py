@@ -330,7 +330,11 @@ async def verify_token(request: Request, call_next):
         return response
     except Exception as e:
         print("e", e)
-        raise HTTPException(status_code=400, detail=str(e)) 
+        # raise HTTPException(
+        #     status_code=status.HTTP_401_UNAUTHORIZED,
+        #         detail="Invalid token",
+        # )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)) 
         
            
 
@@ -460,8 +464,8 @@ def get_user_projects(
         result = db.execute(query).scalars().all()
         return result
     except Exception as e:
-        print("e", e)
-        raise HTTPException(status_code=400, detail=str(e))
+        print("Exception occurred:", e)  # Log the full exception server-side
+        raise HTTPException(status_code=400, detail="An unexpected error occurred. Please contact support.")
 
 
 @app.post("/project/new", response_model=UserProjectResponse)
@@ -745,7 +749,7 @@ def create_new_table(
 
 @app.post("/query/execute")
 def execute_query(
-    query:str,
+    query:dict,
     request:Request,
     db: Session = Depends(get_db)
 ):
@@ -763,7 +767,14 @@ def execute_query(
         print("db_engine", db_engine)
         target_db = Session(db_engine)
         print("db", target_db)
-        t = text(query)
+        query_str = query.get("query")
+        print("query", query_str)
+        if not query_str:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing or empty 'query' parameter.",
+            )
+        t = text(query_str)
         result = target_db.execute(t)
             
         return {
