@@ -7,6 +7,7 @@ from fastapi import (
     Query,
     BackgroundTasks
 )
+from starlette.responses import JSONResponse,Response
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
@@ -17,7 +18,7 @@ from sqlalchemy import create_engine, select, Table, MetaData, and_,text
 from sqlalchemy.orm import Session, joinedload
 
 import jwt
-from jwt.exceptions import InvalidTokenError as InvalidTokenError
+from jwt.exceptions import InvalidTokenError as InvalidTokenError, ExpiredSignatureError
 from passlib.context import CryptContext
 
 from src import (
@@ -59,11 +60,17 @@ origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+headers = {
+     "WWW-Authenticate": "Bearer",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+}
 
 print("DATABASE_URL", DATABASE_URL)
 engine = engine
@@ -161,15 +168,7 @@ def get_user(email: str, db):
 
     return user
 
-
-def fake_decode_token(token):
-    # This doesn't provide any security at all
-    # Check the next version
-    user = get_user(token)
-    return user
-
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -182,9 +181,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         if user is None:
             raise credentials_exception
         token_data = TokenData(email=user["email"])
+    except ExpiredSignatureError:
+        raise JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     except InvalidTokenError:
         raise credentials_exception
-    user = get_user(email=token_data.email)
+    
+    user = get_user(email=token_data.email, db=db)
     if user is None:
         raise credentials_exception
     return user
@@ -198,104 +204,6 @@ async def get_current_active_user(
     return current_user
 
 
-async def insert_schema(session):
-    with Session(metadata_engine) as internalSession:
-        schema_query = select(SchemaInfo.schema_name).where(
-            SchemaInfo.schema_name.notin_(exclude_schemas)
-        )
-        schema_result = session.execute(schema_query).all()
-        for schema in schema_result:
-
-            # Check if schema already exists
-            existing_schema = (
-                internalSession.query(SchemaMetadata)
-                .filter(SchemaMetadata.schema_name == schema[0])
-                .first()
-            )
-            if existing_schema:
-
-                continue
-
-            schema_data = SchemaMetadata(schema_name=schema[0], project_id=1)
-            internalSession.add(schema_data)
-            internalSession.commit()
-            internalSession.refresh(schema_data)
-            asyncio.create_task(insert_tables(session, schema[0], internalSession))
-
-    # return schema_result
-
-
-async def insert_tables(session, schema, internalSession):
-    print("insert_tables", schema)
-    tables_query = select(TableInfo.table_name, TableInfo.table_schema).where(
-        TableInfo.table_schema == schema
-    )
-
-    tables_result = session.execute(tables_query).all()
-    for table in tables_result:
-
-        # Check if table already exists
-        existing_table = (
-            internalSession.query(TableMetadata)
-            .filter(
-                TableMetadata.table_name == table.table_name,
-                TableMetadata.schema_name == table.table_schema,
-            )
-            .first()
-        )
-        if existing_table:
-
-            asyncio.create_task(
-                insert_columns(session, table.table_name, schema, internalSession)
-            )
-            # Insert table if it does not exist
-        else:
-
-            table_data = TableMetadata(
-                table_name=table.table_name, schema_name=table.table_schema
-            )
-            internalSession.add(table_data)
-            internalSession.commit()
-            internalSession.refresh(table_data)
-            asyncio.create_task(
-                insert_columns(session, table.table_name, schema, internalSession)
-            )
-
-
-async def insert_columns(session, table, schema, internalSession):
-
-    columns_query = select(ColumnInfo.column_name, ColumnInfo.table_name).where(
-        ColumnInfo.table_name == table
-    )
-    columns_result = session.execute(columns_query).all()
-    for column in columns_result:
-
-        # Check if column already exists
-        existing_column = (
-            internalSession.query(ColumnMetadata)
-            .filter(
-                ColumnMetadata.column_name == column.column_name,
-                ColumnMetadata.table_name == column.table_name,
-                ColumnMetadata.schema_name == schema,
-            )
-            .first()
-        )
-        if existing_column:
-
-            continue
-
-        column_data = ColumnMetadata(
-            column_name=column.column_name,
-            table_name=column.table_name,
-            schema_name=schema,
-        )
-        internalSession.add(column_data)
-        internalSession.commit()
-        internalSession.refresh(column_data)
-
-    # return columns_result
-
-
 @app.middleware("http")
 async def verify_token(request: Request, call_next):
     if request.method == "OPTIONS":
@@ -306,15 +214,26 @@ async def verify_token(request: Request, call_next):
         return response
     authorization = request.headers.get("authorization")
     if not authorization:
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header is missing",
+            headers=headers,
+            content={"detail":"Authorization header is missing"},
         )
-    token = authorization.split(" ")[1]
-    if not token:
-        raise HTTPException(
+    
+    try:
+        token = authorization.split(" ")[1]
+    except IndexError:
+        return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization token is missing",
+            headers=headers,
+            content={"detail": "Invalid authorization header format. Expected 'Bearer <token>'"},
+        )
+    
+    if not token:
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            headers=headers,
+            content={"detail":"Authorization token is missing"},
         )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -328,15 +247,32 @@ async def verify_token(request: Request, call_next):
         request.state.user = payload.get("bus")
         response = await call_next(request)
         return response
+
+    except ExpiredSignatureError:
+        # Return proper HTTP response for expired token
+        return JSONResponse(
+            content={"detail":"Token has expired"},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            
+           headers=headers
+        )
+    except InvalidTokenError:
+        # Return proper HTTP response for invalid token
+        return JSONResponse(
+            content={"detail":"Invalid token"},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            
+           headers=headers
+        )
     except Exception as e:
-        print("e", e)
-        # raise HTTPException(
-        #     status_code=status.HTTP_401_UNAUTHORIZED,
-        #         detail="Invalid token",
-        # )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)) 
-        
-           
+        print("Unexpected error:", e)
+        return JSONResponse(
+            content={"detail":"An unexpected error occurred during token validation."},
+            status_code=500,
+            headers=headers,
+
+        )
+
 
 @app.post("/token")
 async def login_for_access_token(
@@ -400,51 +336,7 @@ async def register(
     return user_data
 
 
-# @app.on_event("startup")
-async def insert_metadata():
-    print("Inserting metadata on startup")
-    with Session(engine) as session:
-        if dialect.name == "mysql":
-
-            schema_query = select(SchemaInfo.schema_name).where(
-                SchemaInfo.schema_name == engine.url.database
-            )
-
-            schema_result = session.execute(schema_query).all()
-
-            with Session(metadata_engine) as internalSession:
-
-                for schema in schema_result:
-
-                    # Check if schema already exists
-                    existing_schema = (
-                        internalSession.query(SchemaMetadata)
-                        .filter(SchemaMetadata.schema_name == schema[0])
-                        .first()
-                    )
-                    if existing_schema:
-                        print("Schema already exists:")
-                        asyncio.create_task(
-                            insert_tables(session, schema[0], internalSession)
-                        )
-                    else:
-
-                        schema_data = SchemaMetadata(
-                            schema_name=schema[0],
-                            project_id=1,
-                        )  # type:ignore
-                        internalSession.add(schema_data)
-                        internalSession.commit()
-                        internalSession.refresh(schema_data)
-
-                        asyncio.create_task(
-                            insert_tables(session, schema[0], internalSession)
-                        )
-        else:
-            asyncio.create_task(insert_schema(session))
-
-
-@app.get("/projects", response_model=List[UserProjectResponse])
+@app.get("/projects/", response_model=List[UserProjectResponse])
 def get_user_projects(
     request: Request,
     db: Session = Depends(get_db),
@@ -452,7 +344,6 @@ def get_user_projects(
     """Get all projects for the current user"""
     
     try:
-        
         user_id = request.state.user.get("user_id")
         if not user_id:
             raise HTTPException(
@@ -565,6 +456,7 @@ def select_project(
         # print("project_details", project_details)
 
         # Generate a JWT token with project details
+        access_token_expires = timedelta(minutes=int(ACCESS_TOKEN_EXPIRE_MINUTES))
         access_token = create_access_token(
             data={
                 "sub": decoded_token.get("sub"),
@@ -578,7 +470,8 @@ def select_project(
                         "project_name": project.project.project_name,
                     },
                 },
-            }
+            },
+            expires_delta=access_token_expires,
         )
         return {"project_token": access_token}
     except Exception as e:
@@ -797,4 +690,5 @@ def read_root():
 
 
 if __name__ == "__main__":
+    print("main")
     print("main")
