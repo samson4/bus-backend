@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, joinedload
 
 import jwt
 from jwt.exceptions import InvalidTokenError as InvalidTokenError, ExpiredSignatureError
-from passlib.context import CryptContext
+from pwdlib import PasswordHash
 
 from src import (
     SchemaInfo,
@@ -125,15 +125,15 @@ def get_source_db():
         db.close()
 
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+password_hash = PasswordHash.recommended()
 
 
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    return password_hash.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password):
-    return pwd_context.hash(password)
+    return password_hash.hash(password)
 
 
 def authenticate_user(username: str, password: str, db):
