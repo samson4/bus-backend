@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:12
+    container_name: postgres
+    ports:
+        - "5432:5432"
+    env_file:
+      - ./envs/.env.local    
+   
+    restart: always # Ensure the database is created
+    volumes: 
+        - pg_data:/var/lib/postgresql/data  
+    networks:
+      - app_network    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U",  "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5  
+
+  api: &api
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+    env_file:
+      - ./envs/.env.local  
+    volumes:
+      - src:/app
+    ports:
+      - "8000:8000"
+    depends_on: 
+      postgres:
+        condition: service_healthy 
+    
+    networks:
+      - app_network
+
+volumes:
+  pg_data:
+  src:
+  
+networks:
+  app_network:
+    driver: bridge

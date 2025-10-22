@@ -1,3 +1,9 @@
+# import sentry_sdk
+import functools
+from authlib.integrations.starlette_client import OAuth
+from fastapi.responses import RedirectResponse
+from starlette.config import Config as StarletteConfig
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi import (
     Depends,
     FastAPI,
@@ -16,7 +22,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from sqlalchemy import create_engine, select, Table, MetaData, and_,text
 from sqlalchemy.orm import Session, joinedload
-
+from sqlalchemy.pool import NullPool
+from sqlalchemy.sql import func
 import jwt
 from jwt.exceptions import InvalidTokenError as InvalidTokenError, ExpiredSignatureError
 from pwdlib import PasswordHash
@@ -48,6 +55,7 @@ from src.db import DATABASE_URL, metadata_engine, engine
 from src.db.users.userschemas import oauth2_scheme, Token, TokenData
 from decouple import config as decouple_config
 
+
 SECRET_KEY = decouple_config(
     "SECRET_KEY", "90ded69acb971f4f6f9a6913428503503eac012275cd9f2b13c37a0ba43f35c6"
 )
@@ -55,6 +63,15 @@ ALGORITHM = decouple_config("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = decouple_config("ACCESS_TOKEN_EXPIRE_MINUTES", 60)
 
 
+
+
+
+# sentry_sdk.init(
+#     dsn="https://468bde44cffcc512f0d29ff307249c19@o4510186579492864.ingest.us.sentry.io/4510186581721088",
+#     # Add data like request headers and IP for users,
+#     # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+#     send_default_pii=True,
+# )
 app = FastAPI()
 origins = ["*"]
 
@@ -65,12 +82,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+app.add_middleware(SessionMiddleware, secret_key="!secret")
 headers = {
      "WWW-Authenticate": "Bearer",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
 }
+
+
+startlet_config = StarletteConfig('.env')
+oauth = OAuth(startlet_config)
+
+CONF_URL = 'https://accounts.google.com/.well-known/openid-configuration'
+oauth.register(
+    name='google',
+    server_metadata_url=CONF_URL,
+    client_kwargs={
+        'scope': 'openid email profile'
+    }
+)
 
 print("DATABASE_URL", DATABASE_URL)
 engine = engine
@@ -127,7 +157,10 @@ def get_source_db():
 
 password_hash = PasswordHash.recommended()
 
-
+# @app.get("/sentry-debug")
+# async def trigger_error():
+#     division_by_zero = 1 / 0
+#     return division_by_zero
 def verify_password(plain_password, hashed_password):
     return password_hash.verify(plain_password, hashed_password)
 
@@ -209,7 +242,7 @@ async def verify_token(request: Request, call_next):
     if request.method == "OPTIONS":
         response = await call_next(request)
         return response
-    if request.url.path in ["/token", "/register", "/docs", "/openapi.json", "/redoc"]:
+    if request.url.path in ["/token", "/register", "/google/login", "/auth" ,"/docs", "/openapi.json", "/redoc", "/sentry-debug"]:
         response = await call_next(request)
         return response
     authorization = request.headers.get("authorization")
@@ -274,6 +307,26 @@ async def verify_token(request: Request, call_next):
         )
 
 
+@app.get("/google/login")
+async def google_login(request: Request):
+    try:
+        redirect_uri = "http://127.0.0.1:8000/auth"
+        return await oauth.google.authorize_redirect(request, redirect_uri)
+    except Exception as e:
+        print("e", e)
+@app.get("/google/auth")
+async def google_auth(request: Request, db: Session = Depends(get_db)):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        user = token.get('userinfo')
+        print("user", user) 
+        if user:
+            request.session['user'] = dict(user)
+        return RedirectResponse(url='/')
+
+    except Exception as e:
+        print("e", e)
+        return JSONResponse(content={"error": "Authentication failed"}, status_code=400)
 @app.post("/token")
 async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -429,6 +482,7 @@ def select_project(
     db: Session = Depends(get_db),
 ):
     """Select a project and set the database connection to the project's database"""
+   
     try:
         # Get the user ID from the JWT token
         token = request.headers.get("authorization", "").split(" ")[1]
@@ -451,9 +505,7 @@ def select_project(
                 detail="Project not found",
             )
 
-        # Convert the project to the response model
-        # project_details = UserProjectResponse(**project.__dict__)
-        # print("project_details", project_details)
+        print("project", project.project.db_connection_string)
 
         # Generate a JWT token with project details
         access_token_expires = timedelta(minutes=int(ACCESS_TOKEN_EXPIRE_MINUTES))
@@ -473,6 +525,7 @@ def select_project(
             },
             expires_delta=access_token_expires,
         )
+        get_engine(project.project.db_connection_string)
         return {"project_token": access_token}
     except Exception as e:
         print("e", e)
@@ -558,7 +611,7 @@ def get_tables(
         "limit": limit,
     }
 
-
+@functools.lru_cache(maxsize=32)
 @app.get("/columns/")
 def get_columns(table_id: str, limit: Optional[int] = 100, db: Session = Depends(get_db)):
     query = (
@@ -568,45 +621,94 @@ def get_columns(table_id: str, limit: Optional[int] = 100, db: Session = Depends
     return columns.scalars().all()
 
 
+@functools.lru_cache(maxsize=32)
+def get_engine(db_url: str):
+    """
+    Creates and caches a SQLAlchemy engine for a given database URL.
+    We are NOT using NullPool here, so it will use the default QueuePool.
+    """
+    print(f"--- CREATING NEW ENGINE for {db_url} ---")
+    #TODO: Consider adding pool_size and max_overflow parameters based on expected load
+    return create_engine(db_url) 
+
+# Cache for table metadata
+# The key will be a tuple: (db_url, schema_name, table_name)
+@functools.lru_cache(maxsize=128)
+def get_table(db_url: str, schema_name: str, table_name: str) -> Table:
+    """
+    Reflects and caches a Table object.
+    The db_url is part of the key to ensure we cache per-database.
+    """
+    print(f"--- REFLECTING NEW TABLE {schema_name}.{table_name} ---")
+    engine = get_engine(db_url) # This will be fast (from cache)
+    metadata = MetaData()
+    # Autoload the table structure ONCE
+    table = Table(
+        table_name, 
+        metadata, 
+        schema=schema_name, 
+        autoload_with=engine
+    )
+    return table
+
 @app.get("/data/")
-def get_data(
+async def get_data(
     schema: str,
     table: str,
     request: Request,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=15, le=100),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db) # This is your PRIMARY app database
 ):
     try:
-        print("config",config)
+        
+        start_time = datetime.now()
+        print("start", start_time)
         user = request.state.user
         project = user.get("project")
         project_id = project.get("project_id")
+        
+      
         db_url_query = select(ProjectModel.db_connection_string).where(ProjectModel.id == project_id)
         db_url = db.execute(db_url_query).scalars().first()
+        
         schema_query = select(SchemaMetadata.schema_name).where(and_(SchemaMetadata.project_id == project_id, SchemaMetadata.id == schema))
         schema_result = db.execute(schema_query).scalars().first()
-        print("db_url", db_url)
-        print("db_url_query", db_url_query)
-        db_engine = create_engine(db_url)
-        print("db_engine", db_engine)
-        target_db = Session(db_engine)
-        print("db", target_db)
-        query = select(Table(table, MetaData(schema=schema_result), autoload_with=target_db.bind)).limit(limit).offset(skip)
-        print("query", query)
-        total_data = target_db.query(Table(table, MetaData(schema=schema_result), autoload_with=target_db.bind)).count()
-        print("total_data", total_data)
-        result = target_db.execute(query)
-        
-        return {
-            "data": result.mappings().all(),
-            "total": total_data,
-            "page": (skip // limit) + 1,
-            "limit": limit,
-        }
+
+        if not db_url or not schema_result:
+            raise HTTPException(status_code=404, detail="Project or schema not found.")
+
+        target_engine = get_engine(db_url)
+
+       
+        target_table = get_table(db_url, schema_result, table)
+
+        #TODO: Figure out why I cannot use dependency injection for target_db and why this persists connection
+        with Session(target_engine) as target_db:
+            
+            
+            query = select(target_table).limit(limit).offset(skip)
+            
+            
+            total_query = select(func.count()).select_from(target_table)
+
+            
+            total_data = target_db.execute(total_query).scalar_one()
+            result = target_db.execute(query)
+            
+            
+            
+            return {
+                "data": result.mappings().all(),
+                "total": total_data,
+                "time_taken": (datetime.now() - start_time).total_seconds(),
+                "page": (skip // limit) + 1,
+                "limit": limit,
+            }
 
     except Exception as e:
         print("e", e)
+        # Handle specific exceptions if possible (e.g., table not found)
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -650,6 +752,7 @@ def execute_query(
     
 
     try:
+        start_time = datetime.now()
         user = request.state.user
         print("user", user)
         project = user.get("project")
@@ -668,18 +771,17 @@ def execute_query(
                 detail="Missing or empty 'query' parameter.",
             )
         t = text(query_str)
+        print("start",datetime.now())
         result = target_db.execute(t)
-        
+        print("end",datetime.now())
         if result.returns_rows:
-            print("result", result)
-            # print("result.keys()", result.keys())
-            # print("result.mappings().all()", result.mappings().all())
             return {
             "data": result.mappings().all(),
+            "time_taken": (datetime.now() - start_time).total_seconds(),
         }
         else:
             target_db.commit()
-            return {"message": "Query executed successfully."}
+            return {"message": "Query executed successfully.", "time_taken": (datetime.now() - start_time).total_seconds()}
         
     except Exception as e:
         print("e", e)

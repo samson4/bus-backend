@@ -5,10 +5,12 @@ build/
 dist/
 wheels/
 *.egg-info
+activate/
 
 # Virtual environments
 venv
 .env
+envs/
 
 # workspace configurations
 .vscode/
