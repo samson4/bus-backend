@@ -105,22 +105,22 @@ class SchemaInfo(Base):
     )
 
 
-class SchemaMetadata(UniqueIDMixin, TimeStampMixin, Base):
-    __tablename__ = "bus_metadata"
+# class SchemaMetadata(UniqueIDMixin, TimeStampMixin, Base):
+#     __tablename__ = "bus_metadata"
 
-    schema_name = Column(String(255))
-    project_id = Column(String(255), nullable=False)
-    tables: Mapped[List["TableMetadata"]] = relationship(
-        back_populates="schema", cascade="all, delete-orphan"
-    )
+#     schema_name = Column(String(255))
+#     project_id = Column(String(255), nullable=False)
+#     tables: Mapped[List["TableMetadata"]] = relationship(
+#         back_populates="schema", cascade="all, delete-orphan"
+#     )
 
 
-class TableMetadata(Base, UniqueIDMixin, TimeStampMixin):
-    __tablename__ = "table_metadata"
-    table_name = Column(String(255))
-    schema_name = Column(String(255))
-    schema_id = Column(String(255), ForeignKey("bus_metadata.id"), nullable=False)
-    schema: Mapped["SchemaMetadata"] = relationship(back_populates="tables")
+# class TableMetadata(Base, UniqueIDMixin, TimeStampMixin):
+#     __tablename__ = "table_metadata"
+#     table_name = Column(String(255))
+#     schema_name = Column(String(255))
+#     schema_id = Column(String(255), ForeignKey("bus_metadata.id"), nullable=False)
+#     schema: Mapped["SchemaMetadata"] = relationship(back_populates="tables")
     # UniqueConstraint(
     #     table_name, schema_name, name="table_name_schema_name_unique_constraint"
     # )

@@ -1,8 +1,5 @@
 # import sentry_sdk
 import functools
-from authlib.integrations.starlette_client import OAuth
-from fastapi.responses import RedirectResponse
-from starlette.config import Config as StarletteConfig
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi import (
     Depends,
@@ -11,48 +8,41 @@ from fastapi import (
     Request,
     status,
     Query,
-    BackgroundTasks
+    
 )
-from starlette.responses import JSONResponse,Response
+from starlette.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
-from uuid import UUID
-from fastapi.security import OAuth2PasswordRequestForm
+from datetime import datetime
+from typing import  List, Optional
 
 from sqlalchemy import create_engine, select, Table, MetaData, and_,text
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy.pool import NullPool
+from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 import jwt
 from jwt.exceptions import InvalidTokenError as InvalidTokenError, ExpiredSignatureError
-from pwdlib import PasswordHash
 
 from src import (
-    SchemaInfo,
-    TableInfo,
-    ColumnInfo,
-    TableMetadata,
+   
     ColumnMetadata,
-    SchemaMetadata,
-    UserModel,
-    ProjectModel,
-    UserProjectsModel,
+    
+    # ProjectModel
 )
-from src.db.schemas import SchemasPaginatedResponse, TablesPaginatedResponse
-from src.db.users.userschemas import User, UserCreate, UserCreateResponse
-from src.db.projects.projectschemas import (
-    ProjectBase,
-    UserProjectResponse,
-    UserProjects,
-    ProjectCreate,
-)
-from src.db.config import config
-import asyncio
 
+from src.schema import TableMetadata, SchemaMetadata
+# from src.db.schemas.models import SchemaMetadata
+# from src.db.schemas import SchemasPaginatedResponse, TablesPaginatedResponse
+from src.db.schemas.schemas import SchemasPaginatedResponse
+
+from src.db.tables.schemas import TablesPaginatedResponse
+
+
+from src.users.models import UserModel
+from src.projects.models import ProjectModel
 # from src.db.utils.decode import get_current_user
-from src.db import DATABASE_URL, metadata_engine, engine
-from src.db.users.userschemas import oauth2_scheme, Token, TokenData
+from src.db import metadata_engine, engine
+from src.projects.router import project_router
+from src.auth.router import auth_router
+from src.users.router import user_router
 from decouple import config as decouple_config
 
 
@@ -60,18 +50,8 @@ SECRET_KEY = decouple_config(
     "SECRET_KEY", "90ded69acb971f4f6f9a6913428503503eac012275cd9f2b13c37a0ba43f35c6"
 )
 ALGORITHM = decouple_config("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = decouple_config("ACCESS_TOKEN_EXPIRE_MINUTES", 60)
 
 
-
-
-
-# sentry_sdk.init(
-#     dsn="https://468bde44cffcc512f0d29ff307249c19@o4510186579492864.ingest.us.sentry.io/4510186581721088",
-#     # Add data like request headers and IP for users,
-#     # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
-#     send_default_pii=True,
-# )
 app = FastAPI()
 origins = ["*"]
 
@@ -90,56 +70,15 @@ headers = {
 }
 
 
-startlet_config = StarletteConfig('.env')
-oauth = OAuth(startlet_config)
 
-CONF_URL = 'https://accounts.google.com/.well-known/openid-configuration'
-oauth.register(
-    name='google',
-    server_metadata_url=CONF_URL,
-    client_kwargs={
-        'scope': 'openid email profile'
-    }
-)
 
-print("DATABASE_URL", DATABASE_URL)
-engine = engine
-metadata_engine = metadata_engine
-dialect = engine.dialect
-dialct_name = metadata_engine.dialect
-print(f"Connected database dialect: {dialect.name} {dialct_name.name}")
 
-# SchemaMetadata.metadata.create_all(bind=engine)
-# ColumnMetadata.metadata.create_all(bind=engine)
+
+
 UserModel.metadata.create_all(bind=metadata_engine)
-# TableMetadata.metadata.create_all(bind=engine)
+ProjectModel.metadata.create_all(bind=metadata_engine)
 
-
-exclude_schemas = [
-    "information_schema",
-    "pg_catalog",
-    "pg_internal",
-    "pg_temp_1",
-    "pg_toast_temp_1",
-    "pg_toast",
-    "sys",
-    "sys_temp_1",
-]
-exclude_tables = [
-    "pg_statistic",
-    "pg_type",
-    "pg_attribute",
-    "pg_constraint",
-    "pg_index",
-    "pg_class",
-    "pg_namespace",
-    "pg_proc",
-    "pg_settings",
-    "pg_tablespace",
-]
-
-
-def get_db():
+async def get_db():
     db = Session(metadata_engine)
     try:
         yield db
@@ -147,7 +86,7 @@ def get_db():
         db.close()
 
 
-def get_source_db():
+async def get_source_db():
     db = Session(engine)
     try:
         yield db
@@ -155,86 +94,36 @@ def get_source_db():
         db.close()
 
 
-password_hash = PasswordHash.recommended()
 
-# @app.get("/sentry-debug")
-# async def trigger_error():
-#     division_by_zero = 1 / 0
-#     return division_by_zero
-def verify_password(plain_password, hashed_password):
-    return password_hash.verify(plain_password, hashed_password)
+@functools.lru_cache(maxsize=32)
+def get_engine(db_url: str):
+    """
+    Creates and caches a SQLAlchemy engine for a given database URL.
+    We are NOT using NullPool here, so it will use the default QueuePool.
+    """
+    print(f"--- CREATING NEW ENGINE for {db_url} ---")
+    #TODO: Consider adding pool_size and max_overflow parameters based on expected load
+    return create_engine(db_url) 
 
-
-def get_password_hash(password):
-    return password_hash.hash(password)
-
-
-def authenticate_user(username: str, password: str, db):
-    user = get_user(username, db)
-    if not user:
-        return False
-    if not verify_password(password, hashed_password=user.password):
-        return False
-    return user
-
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    to_encode = data.copy()
-    issued_at = datetime.now(timezone.utc)
-    to_encode.update({"iat": issued_at})
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=60)
-
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-
-def get_user(email: str, db):
-    query = select(UserModel).where(UserModel.email == email).limit(1)
-
-    result = db.execute(query)
-
-    user = result.scalars().first()
-
-    return user
-
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
+# Cache for table metadata
+# The key will be a tuple: (db_url, schema_name, table_name)
+@functools.lru_cache(maxsize=128)
+def get_table(db_url: str, schema_name: str, table_name: str) -> Table:
+    """
+    Reflects and caches a Table object.
+    The db_url is part of the key to ensure we cache per-database.
+    """
+    print(f"--- REFLECTING NEW TABLE {schema_name}.{table_name} ---")
+    engine = get_engine(db_url) # This will be fast (from cache)
+    metadata = MetaData()
+    # Autoload the table structure ONCE
+    table = Table(
+        table_name, 
+        metadata, 
+        schema=schema_name, 
+        autoload_with=engine
     )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user = payload.get("bus")
-
-        if user is None:
-            raise credentials_exception
-        token_data = TokenData(email=user["email"])
-    except ExpiredSignatureError:
-        raise JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except InvalidTokenError:
-        raise credentials_exception
-    
-    user = get_user(email=token_data.email, db=db)
-    if user is None:
-        raise credentials_exception
-    return user
-
-
-async def get_current_active_user(
-    current_user: User = Depends(get_current_user),
-):
-    if current_user.disabled:
-        raise HTTPException(status_code=400, detail="Inactive user")
-    return current_user
+    return table
 
 
 @app.middleware("http")
@@ -242,7 +131,7 @@ async def verify_token(request: Request, call_next):
     if request.method == "OPTIONS":
         response = await call_next(request)
         return response
-    if request.url.path in ["/token", "/register", "/google/login", "/auth" ,"/docs", "/openapi.json", "/redoc", "/sentry-debug"]:
+    if request.url.path in ["/token", "/register", "/google/login", "/auth" ,"/docs", "/openapi.json", "/redoc", "/sentry-debug", "/project"]:
         response = await call_next(request)
         return response
     authorization = request.headers.get("authorization")
@@ -307,232 +196,7 @@ async def verify_token(request: Request, call_next):
         )
 
 
-@app.get("/google/login")
-async def google_login(request: Request):
-    try:
-        redirect_uri = "http://127.0.0.1:8000/auth"
-        return await oauth.google.authorize_redirect(request, redirect_uri)
-    except Exception as e:
-        print("e", e)
-@app.get("/google/auth")
-async def google_auth(request: Request, db: Session = Depends(get_db)):
-    try:
-        token = await oauth.google.authorize_access_token(request)
-        user = token.get('userinfo')
-        print("user", user) 
-        if user:
-            request.session['user'] = dict(user)
-        return RedirectResponse(url='/')
-
-    except Exception as e:
-        print("e", e)
-        return JSONResponse(content={"error": "Authentication failed"}, status_code=400)
-@app.post("/token")
-async def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db),
-) -> Token:
-    user = authenticate_user(form_data.username, form_data.password, db)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token_expires = timedelta(minutes=int(ACCESS_TOKEN_EXPIRE_MINUTES))
-    access_token = create_access_token(
-        data={
-            "sub": user.id,
-            "bus": {
-                "user_id": user.id,
-                "username": user.user_name,
-                "email": user.email,
-                "disabled": user.disabled,
-            },
-        },
-        expires_delta=access_token_expires,
-    )
-    return Token(access_token=access_token, token_type="bearer")
-
-
-@app.post("/register", response_model=UserCreateResponse)
-async def register(
-    request: Request,
-    form_data: UserCreate,
-    db: Session = Depends(get_db),
-):
-    # user_data = User(form_data)
-
-    user = get_user(form_data.email, db)
-    if user:
-        raise HTTPException(
-            status_code=400,
-            detail="Email already registered",
-        )
-    hashed_password = get_password_hash(form_data.password)
-    user_data = UserModel(
-        user_name=form_data.email,
-        email=form_data.email,
-        password=hashed_password,
-    )
-    db.add(user_data)
-    db.commit()
-    db.refresh(user_data)
-    user = UserCreateResponse(
-        id=user_data.id,
-        email=user_data.email,
-        is_active=True,
-        is_superuser=False,
-        is_verified=True,
-    )
-
-    return user_data
-
-
-@app.get("/projects/", response_model=List[UserProjectResponse])
-def get_user_projects(
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    """Get all projects for the current user"""
-    
-    try:
-        user_id = request.state.user.get("user_id")
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-            )
-        query = select(UserProjectsModel).where(UserProjectsModel.user_id == user_id)
-
-        result = db.execute(query).scalars().all()
-        return result
-    except Exception as e:
-        print("Exception occurred:", e)  # Log the full exception server-side
-        raise HTTPException(status_code=400, detail="An unexpected error occurred. Please contact support.")
-
-
-@app.post("/project/new", response_model=UserProjectResponse)
-def create_project(
-    request: Request, 
-    form_data: ProjectCreate, 
-     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
-):
-    # print("proj",form_data.db_connection_string)
-    """Create a new project for the current user"""
-    headers = request.headers
-    token = headers.get("authorization", "").split(" ")[1]
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization token is missing",
-        )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("sub")
-
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-            )
-        config.set_config(
-            form_data.db_connection_string, form_data.database_dialect
-        )
-        db_connection_string  = config.adapter.get_connection_string()
-
-        print("db_connection_string", db_connection_string)
-        if not db_connection_string:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid database connection string",
-            )
-        new_project = ProjectModel(
-            project_name=form_data.project_name,
-            db_connection_string=db_connection_string,
-            created_by=user_id,
-        )
-        db.add(new_project)
-        db.commit()
-        db.refresh(new_project)
-
-        new_user_project = UserProjectsModel(
-            project_id=new_project.id,
-            user_id=user_id,
-        )
-        db.add(new_user_project)
-        db.commit()
-        db.refresh(new_user_project)
-        config.adapter.create_connection()
-        config.adapter.get_connection_string
-        background_tasks.add_task(config.adapter.initialize_metadata,project_id=new_project.id)
-        return new_user_project
-    except Exception as e:
-        print("e", e)
-        if config.adapter:
-            config.adapter.close_connection()
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/project/select/{project_id}")
-def select_project(
-    request: Request,
-    project_id: str,
-    db: Session = Depends(get_db),
-):
-    """Select a project and set the database connection to the project's database"""
-   
-    try:
-        # Get the user ID from the JWT token
-        token = request.headers.get("authorization", "").split(" ")[1]
-        user_id = request.state.user.get("user_id")
-        decoded_token= jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        # Query the project with relationships
-        project_query = (
-            select(UserProjectsModel)
-            .options(joinedload(UserProjectsModel.project), joinedload(UserProjectsModel.user))
-            .where(
-                UserProjectsModel.project_id == project_id,
-                UserProjectsModel.user_id == user_id,
-            )
-        )
-
-        project = db.execute(project_query).scalars().first()
-        if not project:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Project not found",
-            )
-
-        print("project", project.project.db_connection_string)
-
-        # Generate a JWT token with project details
-        access_token_expires = timedelta(minutes=int(ACCESS_TOKEN_EXPIRE_MINUTES))
-        access_token = create_access_token(
-            data={
-                "sub": decoded_token.get("sub"),
-                "bus": {
-                    "user_id": decoded_token.get("bus")["user_id"],
-                    "username": decoded_token.get("bus")["username"],
-                    "email": decoded_token.get("bus")["email"],
-                    "disabled": decoded_token.get("bus")["disabled"],
-                    "project": {
-                        "project_id": project.project.id,
-                        "project_name": project.project.project_name,
-                    },
-                },
-            },
-            expires_delta=access_token_expires,
-        )
-        get_engine(project.project.db_connection_string)
-        return {"project_token": access_token}
-    except Exception as e:
-        print("e", e)
-        raise HTTPException(status_code=400, detail=str(e))
-        
-        
-    
+     
 
 # API Routes
 @app.get("/schemas/", response_model=SchemasPaginatedResponse)
@@ -611,7 +275,6 @@ def get_tables(
         "limit": limit,
     }
 
-@functools.lru_cache(maxsize=32)
 @app.get("/columns/")
 def get_columns(table_id: str, limit: Optional[int] = 100, db: Session = Depends(get_db)):
     query = (
@@ -620,36 +283,6 @@ def get_columns(table_id: str, limit: Optional[int] = 100, db: Session = Depends
     columns = db.execute(query)
     return columns.scalars().all()
 
-
-@functools.lru_cache(maxsize=32)
-def get_engine(db_url: str):
-    """
-    Creates and caches a SQLAlchemy engine for a given database URL.
-    We are NOT using NullPool here, so it will use the default QueuePool.
-    """
-    print(f"--- CREATING NEW ENGINE for {db_url} ---")
-    #TODO: Consider adding pool_size and max_overflow parameters based on expected load
-    return create_engine(db_url) 
-
-# Cache for table metadata
-# The key will be a tuple: (db_url, schema_name, table_name)
-@functools.lru_cache(maxsize=128)
-def get_table(db_url: str, schema_name: str, table_name: str) -> Table:
-    """
-    Reflects and caches a Table object.
-    The db_url is part of the key to ensure we cache per-database.
-    """
-    print(f"--- REFLECTING NEW TABLE {schema_name}.{table_name} ---")
-    engine = get_engine(db_url) # This will be fast (from cache)
-    metadata = MetaData()
-    # Autoload the table structure ONCE
-    table = Table(
-        table_name, 
-        metadata, 
-        schema=schema_name, 
-        autoload_with=engine
-    )
-    return table
 
 @app.get("/data/")
 async def get_data(
@@ -791,6 +424,9 @@ def read_root():
     return "Server is running"
 
 
+app.include_router(project_router)
+app.include_router(auth_router)
+app.include_router(user_router)
+
 if __name__ == "__main__":
-    print("main")
     print("main")
