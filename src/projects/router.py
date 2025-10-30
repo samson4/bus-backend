@@ -33,12 +33,12 @@ project_router = APIRouter()
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
-    issued_at = datetime.now(timezone.utc)
+    issued_at = datetime.datetime.now(timezone.utc)
     to_encode.update({"iat": issued_at})
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = datetime.datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=60)
+        expire = datetime.datetime.now(timezone.utc) + timedelta(minutes=60)
 
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)

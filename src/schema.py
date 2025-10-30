@@ -2,30 +2,26 @@
 from sqlalchemy import Column, ForeignKey, String, UniqueConstraint
 from src.mixins import UniqueIDMixin, TimeStampMixin
 from sqlalchemy.orm import Mapped, relationship
-from sqlalchemy.ext.declarative import declarative_base
 from typing import List
-Base = declarative_base()
+# reuse the project's shared Base so all models share the same MetaData
+from src.models import Base
+
 class TableMetadata(Base, UniqueIDMixin, TimeStampMixin):
     # from src.db.schemas.models import SchemaMetadata
     __tablename__ = "table_metadata"
     table_name = Column(String(255))
     schema_name = Column(String(255))
     schema_id = Column(String(255), ForeignKey("bus_metadata.id"), nullable=False)
-    schema: Mapped["SchemaMetadata"] = relationship(back_populates="tables")
-    UniqueConstraint(
-        table_name, schema_name, name="table_name_schema_name_unique_constraint"
+    schema: Mapped["SchemaMetadata"] = relationship(
+        "SchemaMetadata", back_populates="tables"
     )
+    # __table_args__ = (
+    #     UniqueConstraint(
+    #         "table_name", "schema_name", name="table_name_schema_name_unique_constraint"
+    #     ),
+    # )
 
-# # sqlalchemy models
-
-# from sqlalchemy import Column, String
-# from src.mixins import UniqueIDMixin, TimeStampMixin
-# from sqlalchemy.orm import Mapped, relationship
-# from sqlalchemy.ext.declarative import declarative_base
-
-
-Base = declarative_base()
-class SchemaMetadata(UniqueIDMixin, TimeStampMixin, Base):
+class SchemaMetadata(Base, UniqueIDMixin, TimeStampMixin):
     # from src.db.tables.models import TableMetadata
     __tablename__ = "bus_metadata"
 

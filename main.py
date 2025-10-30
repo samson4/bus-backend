@@ -13,7 +13,7 @@ from fastapi import (
 from starlette.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
-from typing import  List, Optional
+from typing import  Optional
 
 from sqlalchemy import create_engine, select, Table, MetaData, and_,text
 from sqlalchemy.orm import Session
@@ -21,13 +21,14 @@ from sqlalchemy.sql import func
 import jwt
 from jwt.exceptions import InvalidTokenError as InvalidTokenError, ExpiredSignatureError
 
-from src import (
+# from src import (
    
-    ColumnMetadata,
+    # ColumnMetadata,
     
     # ProjectModel
-)
+# )
 
+from src.models import Base, ColumnMetadata
 from src.schema import TableMetadata, SchemaMetadata
 # from src.db.schemas.models import SchemaMetadata
 # from src.db.schemas import SchemasPaginatedResponse, TablesPaginatedResponse
@@ -36,7 +37,7 @@ from src.db.schemas.schemas import SchemasPaginatedResponse
 from src.db.tables.schemas import TablesPaginatedResponse
 
 
-from src.users.models import UserModel
+# from src.users.models import UserModel
 from src.projects.models import ProjectModel
 # from src.db.utils.decode import get_current_user
 from src.db import metadata_engine, engine
@@ -74,9 +75,9 @@ headers = {
 
 
 
-
-UserModel.metadata.create_all(bind=metadata_engine)
-ProjectModel.metadata.create_all(bind=metadata_engine)
+Base.metadata.create_all(bind=metadata_engine)
+# UserModel.metadata.create_all(bind=metadata_engine)
+# ProjectModel.metadata.create_all(bind=metadata_engine)
 
 async def get_db():
     db = Session(metadata_engine)

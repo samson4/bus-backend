@@ -48,7 +48,7 @@ class MariaDBAdapter:
 
     def create_connection(self):
         try:
-            from src.models import  SchemaMetadata, ColumnMetadata, TableMetadata
+            # from src.models import  SchemaMetadata, ColumnMetadata, TableMetadata
             # Logic to create a MARIADB connection
             self.connection = create_engine(self.get_connection_string())
             print("mysql connection", self.connection)

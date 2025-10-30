@@ -129,7 +129,8 @@ class Seed:
         except Exception as e:
             print("Error in insert_columns:", e)
     async def insert_schema(self, source_db, db):
-        from src.models import SchemaInfo, SchemaMetadata
+        from src.models import SchemaInfo
+        from src.schema import SchemaMetadata
         # from src.db.schemas import Schemas
         try:
             print("insert_schema")
@@ -162,7 +163,8 @@ class Seed:
         except Exception as e:
             print("Error in insert_schema:", e)
     async def insert_tables(self, source_db, schema_data, db):
-        from src.models import TableInfo, TableMetadata
+        from src.models import TableInfo
+        from src.schema import TableMetadata
 
         print("insert_tables", schema_data)
         tables_query = select(TableInfo.table_name, TableInfo.table_schema).where(
@@ -209,7 +211,8 @@ class Seed:
         # source_db:Session = self.get_source_db(self.adapter)
         with Session(self.metadata_engine) as db, Session(self.adapter) as source_db:
             
-            from src.models import SchemaInfo, SchemaMetadata
+            from src.models import SchemaInfo
+            from src.schema import SchemaMetadata
 
             schema_query = select(SchemaInfo.schema_name).where(
                 SchemaInfo.schema_name == self.adapter.url.database

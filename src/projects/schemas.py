@@ -12,7 +12,7 @@ class ProjectBase(BaseModel):
 
     id: str
     project_name: str
-    # db_connection_string: str
+    db_connection_string: str
     created_by: str
 
     class Config:

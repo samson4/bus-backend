@@ -47,13 +47,14 @@ class PostgreSQLAdapter:
 
 
     def create_connection(self):
-        from src.models import  SchemaMetadata, ColumnMetadata, TableMetadata
-        # Logic to create a MySQL connection
+        # Use the shared Base to create the metadata on the target DB.
+        # Import here to avoid top-level circular imports.
+        from src.models import Base
+        # create engine/connection to the target DB
         self.connection = create_engine(self.get_connection_string())
         print("pg connection", self.connection)
-        SchemaMetadata.metadata.create_all(bind=self.connection)
-        ColumnMetadata.metadata.create_all(bind=self.connection)
-        TableMetadata.metadata.create_all(bind=self.connection)
+        # Create all tables registered on the shared Base in the target DB
+        Base.metadata.create_all(bind=self.connection)
         
     def initialize_metadata(self, project_id):
        

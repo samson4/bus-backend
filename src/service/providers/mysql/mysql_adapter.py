@@ -48,7 +48,8 @@ class MySQLAdapter:
 
     def create_connection(self):
         try:
-            from src.models import  SchemaMetadata, ColumnMetadata, TableMetadata
+            # from src.models import ColumnMetadata
+            # from src.schema import SchemaMetadata,TableMetadata
             # Logic to create a MySQL connection
             self.connection = create_engine(self.get_connection_string())
             print("mysql connection", self.connection)
