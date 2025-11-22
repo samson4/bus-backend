@@ -346,35 +346,36 @@ async def get_data(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/table/new")
-def create_new_table(
-    request:Request,
-    
-    db: Session = Depends(get_db)
-):
-    """Endpoint for creating new table in the corresponding database
-     e.g.::
+# @app.post("/table/new")
+# def create_new_table(
+#     request:Request,
+#     table_info:CreateTableInfo,
+#     db: Session = Depends(get_db)
+# ):
+#     """Endpoint for creating new table in the corresponding database
+#      e.g.::
 
-        mytable = Table(
-            "mytable",
-            metadata,
-            Column("mytable_id", Integer, primary_key=True),
-            Column("value", String(50)),
-        )
-    """
-    user = request.state.user
-    project = user.get("project")
-    project_id = project.get("project_id")
-    db_url_query = select(ProjectModel.db_connection_string).where(ProjectModel.id == project_id)
-    db_url = db.execute(db_url_query).scalars().first()
-    db_engine = create_engine(db_url)
-    print("db_engine", db_engine)
-    target_db = Session(db_engine)
-    print("db", target_db)
-    Table(
-
-    )
-    pass
+#         mytable = Table(
+#             "mytable",
+#             metadata,
+#             Column("mytable_id", Integer, primary_key=True),
+#             Column("value", String(50)),
+#         )
+#     """
+#     user = request.state.user
+#     project = user.get("project")
+#     project_id = project.get("project_id")
+#     db_url_query = select(ProjectModel.db_connection_string).where(ProjectModel.id == project_id)
+#     db_url = db.execute(db_url_query).scalars().first()
+#     db_engine = get_engine(db_url)
+#     print("db_engine", db_engine)
+#     target_db = Session(db_engine)
+#     print("db", target_db)
+#     Table(
+        
+#        autoload_with=db_engine,
+#     )
+#     pass
 
 @app.post("/query/execute")
 def execute_query(

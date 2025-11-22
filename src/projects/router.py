@@ -159,6 +159,18 @@ def create_project(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid database connection string",
             )
+        engine = get_engine(db_connection_string)
+        # Test the connection
+        with Session(engine) as test_db:
+            query = text("SELECT 1")
+            data = test_db.execute(query).scalar_one()
+            if data != 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to connect to the provided database.",
+                )
+            else:
+                print("Successfully connected to the provided database.")
         new_project = ProjectModel(
             project_name=form_data.project_name,
             db_connection_string=db_connection_string,
@@ -181,6 +193,7 @@ def create_project(
         return new_user_project
     except Exception as e:
         print("e", e)
+        db.rollback()
         if config.adapter:
             config.adapter.close_connection()
         raise HTTPException(status_code=400, detail=str(e))

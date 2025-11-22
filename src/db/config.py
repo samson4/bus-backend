@@ -86,9 +86,15 @@ database = decouple_config("DATABASE", "postgres")
 user = decouple_config("DB_USER", "postgres")
 password = decouple_config("DB_PASSWORD", "postgres")
 port = decouple_config("DB_PORT", "5432")
+POSTGRES_DB=decouple_config("POSTGRES_DB", "bus_metadata")
+POSTGRES_USER=decouple_config("POSTGRES_USER", "postgres")
+POSTGRES_PASSWORD=decouple_config("POSTGRES_PASSWORD", "postgres")
+POSTGRES_HOST=decouple_config("POSTGRES_HOST", "localhost")
+POSTGRES_PORT=decouple_config("POSTGRES_PORT", "5432")
 DATABASE_URL = decouple_config(
     "DATABASE_URL", f"postgresql+psycopg2://{user}:{password}@{host}/{database}"
 )
+METADATA_DATABASE_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{port}/{POSTGRES_DB}"
 engine = create_engine(DATABASE_URL)
-metadata_engine = create_engine("sqlite:///./metadata.db")
+metadata_engine = create_engine(METADATA_DATABASE_URL)
 config = Config()

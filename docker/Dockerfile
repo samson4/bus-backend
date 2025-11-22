@@ -1,8 +1,10 @@
 FROM python:3.13-slim-bookworm
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
-        build-essential \
-        curl && \
+    build-essential \
+    curl \
+    libmariadb-dev-compat \
+    libmariadb-dev && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ADD https://astral.sh/uv/install.sh /install.sh
@@ -19,10 +21,10 @@ WORKDIR /src
 COPY ../ .
 COPY tests/ ../tests/
 
-RUN uv sync
-
 # Correct the PATH configuration
 ENV PATH="/src/.venv/bin:${PATH}"
+
+RUN uv sync
 
 # Expose the specified port for FastAPI
 EXPOSE $PORT
