@@ -157,10 +157,7 @@ The API will be available at [http://localhost:8000](http://localhost:8000).
 
 Watch the demo video to see the application in action:
 
-<video controls>
-  <source src="./demo/db explore demo.webm" type="video/webm">
-  Your browser does not support the video tag.
-</video>
+[![Demo Video](https://picsum.photos/300/200)](https://res.cloudinary.com/dpj8cuqfq/video/upload/v1763797577/db_explore_demo_egetuo.webm)
 
 ## Code Quality
 
