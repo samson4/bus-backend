@@ -36,7 +36,7 @@ install:
 	@uv sync
 
 build:
-	@docker-compose -f $(COMPOSE_FILE) build
+	@docker compose -f $(COMPOSE_FILE) build
 
 # Development
 dev: build up
@@ -47,23 +47,23 @@ dev: build up
 
 up:
 	@echo "Using compose file: $(COMPOSE_FILE)"
-	@docker-compose -f $(COMPOSE_FILE) up -d
+	@docker compose -f $(COMPOSE_FILE) up -d
 
 down:
-	@docker-compose -f $(COMPOSE_FILE) down
+	@docker compose -f $(COMPOSE_FILE) down
 
 restart: down up
 
 logs:
-	@docker-compose -f $(COMPOSE_FILE) logs -f
+	@docker compose -f $(COMPOSE_FILE) logs -f
 
 shell:
-	@docker-compose -f $(COMPOSE_FILE) exec $(API_SERVICE) /bin/bash
+	@docker compose -f $(COMPOSE_FILE) exec $(API_SERVICE) /bin/bash
 
 # test:
 # 	@docker-compose -f $(TEST_COMPOSE_FILE) up --build -d
 
 # Cleanup
 clean:
-	@docker-compose -f $(COMPOSE_FILE) down -v
-	@docker-compose -f $(TEST_COMPOSE_FILE) down -v
+	@docker compose -f $(COMPOSE_FILE) down -v
+	@docker compose -f $(TEST_COMPOSE_FILE) down -v
