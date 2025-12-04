@@ -157,7 +157,9 @@ The API will be available at [http://localhost:8000](http://localhost:8000).
 
 Watch the demo video to see the application in action:
 
-[![Demo Video](https://picsum.photos/300/200)](https://res.cloudinary.com/dpj8cuqfq/video/upload/v1763797577/db_explore_demo_egetuo.webm)
+[db explore demo.webm](https://github.com/user-attachments/assets/2773629c-aed9-4925-86b3-962d1b1604a9)
+
+
 
 ## Code Quality
 
